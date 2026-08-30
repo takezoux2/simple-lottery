@@ -29,8 +29,29 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## GitHub Pages へのデプロイ
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+本プロジェクトは GitHub Actions を用いて GitHub Pages へ自動デプロイできるように設定されています。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 初回設定手順（リポジトリ管理者）
+1. GitHub リポジトリの **Settings** > **Pages** を開きます。
+2. **Build and deployment** > **Source** で **「GitHub Actions」** を選択します。
+3. `main`（または `master`）ブランチに変更をプッシュすると、自動的に `.github/workflows/deploy.yml` が実行されデプロイされます。
+4. GitHub Actions タブの「Deploy to GitHub Pages」から手動で実行（workflow_dispatch）することも可能です。
+
+### ローカルでの検証・ビルド
+
+```bash
+# テストの実行
+pnpm test
+
+# Linter / Formatter のチェック
+pnpm run lint
+
+# 静的エクスポートビルド（ルートパス）
+pnpm run build
+
+# GitHub Pages 用のサブパス（/simple-lottery）を指定したビルド
+NEXT_PUBLIC_BASE_PATH=/simple-lottery pnpm run build
+```
+

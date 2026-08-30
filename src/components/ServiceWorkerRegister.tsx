@@ -7,8 +7,12 @@ export function ServiceWorkerRegister() {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       // Register service worker after window load to prevent blocking initial paint
       const register = () => {
+        const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+        const swUrl = `${basePath}/sw.js`;
+        const scope = basePath ? `${basePath}/` : "/";
+
         navigator.serviceWorker
-          .register("/sw.js")
+          .register(swUrl, { scope })
           .then((registration) => {
             console.log("[SW] Registered successfully:", registration.scope);
           })
