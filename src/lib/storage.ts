@@ -34,6 +34,26 @@ export function generateId(): string {
 }
 
 /**
+ * 指定文字数（デフォルト5文字）のランダムなIDを生成します（半角英小文字・数字）
+ */
+export function generateShortId(length = 5): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const values = new Uint8Array(length);
+    crypto.getRandomValues(values);
+    for (let i = 0; i < length; i++) {
+      result += chars[values[i] % chars.length];
+    }
+    return result;
+  }
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
  * LocalStorageから保存されているすべての確率設定を取得します
  */
 export function getStoredConfigs(): LotteryConfig[] {
@@ -118,6 +138,9 @@ export function getActiveConfig(): LotteryConfig {
 
 /**
  * 確率設定を新規作成または更新保存します
+ * @param configData 保存するくじ設定データ
+ * @param setActive 保存後にアクティブ設定にするかどうか
+ * @param originalId 編集前のID（IDを変更した場合のマイグレーション用）
  */
 export function saveConfig(
   configData: {
@@ -132,6 +155,7 @@ export function saveConfig(
     maxHistoryCount?: number;
   },
   setActive = false,
+  originalId?: string,
 ): { savedConfig: LotteryConfig; configs: LotteryConfig[] } {
   const configs = getStoredConfigs();
   const now = Date.now();
@@ -144,11 +168,66 @@ export function saveConfig(
     ),
   );
 
-  let savedConfig: LotteryConfig;
+  const targetId = configData.id?.trim() || generateShortId(5);
 
+  // 1. originalId が指定されている場合の更新（ID変更対応）
+  if (originalId && configs.some((c) => c.id === originalId)) {
+    const existing = configs.find((c) => c.id === originalId);
+
+    // IDが変更された場合、履歴・当選回数・アクティブIDを新IDへ移行
+    if (originalId !== targetId) {
+      // 履歴移行
+      const allHistories = getAllStoredHistories();
+      if (allHistories[originalId]) {
+        allHistories[targetId] = allHistories[originalId].map((h) => ({
+          ...h,
+          configId: targetId,
+        }));
+        delete allHistories[originalId];
+        saveAllStoredHistories(allHistories);
+      }
+
+      // 当選回数移行
+      const allHits = getAllStoredHitCounts();
+      if (allHits[originalId]) {
+        allHits[targetId] = allHits[originalId];
+        delete allHits[originalId];
+        saveAllStoredHitCounts(allHits);
+      }
+
+      // アクティブID更新
+      if (getActiveConfigId() === originalId) {
+        setActiveConfigId(targetId);
+      }
+    }
+
+    const savedConfig: LotteryConfig = {
+      id: targetId,
+      name: configData.name.trim() || "無題の設定",
+      items: configData.items,
+      animationType: configData.animationType ?? "card",
+      showLabel: configData.showLabel !== false,
+      showProbability: configData.showProbability !== false,
+      showHistory: configData.showHistory !== false,
+      showLimit: configData.showLimit !== false,
+      maxHistoryCount: validatedMaxHistory,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+
+    const updatedConfigs = configs.map((c) => (c.id === originalId ? savedConfig : c));
+    saveStoredConfigs(updatedConfigs);
+
+    if (setActive) {
+      setActiveConfigId(savedConfig.id);
+    }
+    return { savedConfig, configs: updatedConfigs };
+  }
+
+  // 2. configData.id が既存設定と一致する場合の更新
   if (configData.id && configs.some((c) => c.id === configData.id)) {
-    // 既存更新
-    savedConfig = {
+    const existing = configs.find((c) => c.id === configData.id);
+    const savedConfig: LotteryConfig = {
       id: configData.id,
       name: configData.name.trim() || "無題の設定",
       items: configData.items,
@@ -158,7 +237,7 @@ export function saveConfig(
       showHistory: configData.showHistory !== false,
       showLimit: configData.showLimit !== false,
       maxHistoryCount: validatedMaxHistory,
-      createdAt: configs.find((c) => c.id === configData.id)?.createdAt || now,
+      createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
     const updatedConfigs = configs.map((c) => (c.id === savedConfig.id ? savedConfig : c));
@@ -170,9 +249,9 @@ export function saveConfig(
     return { savedConfig, configs: updatedConfigs };
   }
 
-  // 新規作成
-  savedConfig = {
-    id: configData.id || generateId(),
+  // 3. 新規作成
+  const savedConfig: LotteryConfig = {
+    id: targetId,
     name: configData.name.trim() || "新規設定",
     items: configData.items,
     animationType: configData.animationType ?? "card",
@@ -205,7 +284,7 @@ export function duplicateConfig(
 
   const now = Date.now();
   const duplicated: LotteryConfig = {
-    id: generateId(),
+    id: generateShortId(5),
     name: `${target.name} (コピー)`,
     items: target.items.map((item) => ({
       ...item,

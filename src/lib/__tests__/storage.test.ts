@@ -11,6 +11,7 @@ import {
   clearHistory,
   deleteConfig,
   duplicateConfig,
+  generateShortId,
   getActiveConfig,
   getActiveConfigId,
   getHistoryCount,
@@ -113,7 +114,55 @@ describe("storage management", () => {
     expect(found?.maxHistoryCount).toBe(50);
   });
 
-  it("should duplicate a config with showLimit/limit and empty history and hit counts", () => {
+  it("should generate a 5-character short ID by default with alphanumeric characters", () => {
+    const id1 = generateShortId();
+    expect(id1).toHaveLength(5);
+    expect(/^[a-z0-9]{5}$/.test(id1)).toBe(true);
+
+    const id2 = generateShortId(8);
+    expect(id2).toHaveLength(8);
+    expect(/^[a-z0-9]{8}$/.test(id2)).toBe(true);
+  });
+
+  it("should migrate history, hit counts, and activeConfigId when config ID is changed", () => {
+    const original = DEFAULT_CONFIGS[0];
+    setActiveConfigId(original.id);
+
+    // 履歴と当選回数を追加
+    addHistoryItem(original.id, original.items[0], 20);
+    incrementHitCount(original.id, original.items[0].id);
+
+    expect(getStoredHistory(original.id)).toHaveLength(1);
+    expect(getStoredHitCounts(original.id)[original.items[0].id]).toBe(1);
+    expect(getActiveConfigId()).toBe(original.id);
+
+    const newId = "custom-id-999";
+    const updateData = {
+      id: newId,
+      name: "ID変更後のくじ",
+      items: original.items,
+    };
+
+    const { savedConfig, configs } = saveConfig(updateData, false, original.id);
+    expect(savedConfig.id).toBe(newId);
+    expect(configs.some((c) => c.id === original.id)).toBe(false);
+    expect(configs.some((c) => c.id === newId)).toBe(true);
+
+    // 履歴が新IDに移行され、旧IDからは削除されていること
+    expect(getStoredHistory(original.id)).toHaveLength(0);
+    const newHist = getStoredHistory(newId);
+    expect(newHist).toHaveLength(1);
+    expect(newHist[0].configId).toBe(newId);
+
+    // 当選回数が新IDに移行され、旧IDからは削除されていること
+    expect(getStoredHitCounts(original.id)).toEqual({});
+    expect(getStoredHitCounts(newId)[original.items[0].id]).toBe(1);
+
+    // アクティブ設定IDも新IDに更新されていること
+    expect(getActiveConfigId()).toBe(newId);
+  });
+
+  it("should duplicate a config with showLimit/limit, a 5-char random ID, and empty history and hit counts", () => {
     const target = DEFAULT_CONFIGS[0];
     // 対象設定に履歴と当選回数を追加
     addHistoryItem(target.id, target.items[0], 20);
@@ -125,6 +174,8 @@ describe("storage management", () => {
     expect(result).not.toBeNull();
     expect(result?.duplicated.name).toBe(`${target.name} (コピー)`);
     expect(result?.duplicated.id).not.toBe(target.id);
+    expect(result?.duplicated.id).toHaveLength(5);
+    expect(/^[a-z0-9]{5}$/.test(result?.duplicated.id || "")).toBe(true);
     expect(result?.duplicated.showHistory).toBe(true);
     expect(result?.duplicated.showLimit).toBe(true);
     expect(result?.duplicated.maxHistoryCount).toBe(20);

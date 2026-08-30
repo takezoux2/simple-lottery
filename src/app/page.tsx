@@ -23,9 +23,11 @@ import {
   setActiveConfigId,
 } from "@/lib/storage";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
   const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
   const [activeConfig, setActiveConfig] = useState<LotteryConfig>(DEFAULT_CONFIGS[0]);
   const [currentResult, setCurrentResult] = useState<LotteryItem | null>(null);
@@ -44,15 +46,38 @@ export default function Home() {
     };
   }, []);
 
-  // LocalStorageから設定・履歴・当選数をロード
+  // LocalStorageおよびURLパラメータから設定・履歴・当選数をロード
   useEffect(() => {
     const loadedConfigs = getStoredConfigs();
-    const currentActive = getActiveConfig();
     setConfigs(loadedConfigs);
-    setActiveConfig(currentActive);
-    setHistory(getStoredHistory(currentActive.id));
-    setHitCounts(getStoredHitCounts(currentActive.id));
-  }, []);
+
+    const queryId = searchParams.get("id");
+    let targetConfig: LotteryConfig | undefined;
+
+    if (queryId) {
+      targetConfig = loadedConfigs.find((c) => c.id === queryId);
+    }
+
+    if (!targetConfig) {
+      targetConfig = getActiveConfig();
+    }
+
+    if (targetConfig) {
+      setActiveConfigId(targetConfig.id);
+      setActiveConfig(targetConfig);
+      setHistory(getStoredHistory(targetConfig.id));
+      setHitCounts(getStoredHitCounts(targetConfig.id));
+
+      // URLパラメータの同期
+      if (typeof window !== "undefined") {
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.get("id") !== targetConfig.id) {
+          currentUrl.searchParams.set("id", targetConfig.id);
+          window.history.replaceState(null, "", currentUrl.toString());
+        }
+      }
+    }
+  }, [searchParams]);
 
   // 設定の切り替え
   const handleSelectConfig = (id: string) => {
@@ -69,6 +94,13 @@ export default function Home() {
       setTargetWheelResult(null);
       setHistory(getStoredHistory(target.id));
       setHitCounts(getStoredHitCounts(target.id));
+
+      // URLクエリパラメータを更新
+      if (typeof window !== "undefined") {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set("id", target.id);
+        window.history.replaceState(null, "", currentUrl.toString());
+      }
     }
   };
 
@@ -543,5 +575,19 @@ export default function Home() {
       {/* Footer */}
       <Footer />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">
+          読み込み中...
+        </div>
+      }
+    >
+      <HomeContent />
+    </Suspense>
   );
 }

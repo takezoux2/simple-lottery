@@ -17,6 +17,7 @@ import {
   deleteConfig,
   duplicateConfig,
   generateId,
+  generateShortId,
   getActiveConfigId,
   getHistoryCount,
   getStoredConfigs,
@@ -26,6 +27,7 @@ import {
   setActiveConfigId,
 } from "@/lib/storage";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type ViewMode = "list" | "create" | "edit";
@@ -39,6 +41,7 @@ interface FormItemState {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [configs, setConfigs] = useState<LotteryConfig[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -46,6 +49,7 @@ export default function SettingsPage() {
   const [_historyVersion, setHistoryVersion] = useState(0);
 
   // フォーム状態
+  const [formId, setFormId] = useState("");
   const [formName, setFormName] = useState("");
   const [formAnimationType, setFormAnimationType] = useState<LotteryAnimationType>("card");
   const [formItems, setFormItems] = useState<FormItemState[]>([]);
@@ -77,6 +81,7 @@ export default function SettingsPage() {
   const handleBackToList = () => {
     setViewMode("list");
     setEditingId(null);
+    setFormId("");
     setFormError(null);
     setActiveColorPickerIndex(null);
   };
@@ -84,6 +89,7 @@ export default function SettingsPage() {
   // 新規作成画面を開く
   const handleOpenCreate = () => {
     setEditingId(null);
+    setFormId(generateShortId(5));
     setFormName("新しいくじ設定");
     setFormAnimationType("card");
     setFormItems([
@@ -102,6 +108,7 @@ export default function SettingsPage() {
   // 編集画面を開く
   const handleOpenEdit = (config: LotteryConfig) => {
     setEditingId(config.id);
+    setFormId(config.id);
     setFormName(config.name);
     setFormAnimationType(config.animationType ?? "card");
     setFormItems(
@@ -120,6 +127,26 @@ export default function SettingsPage() {
     setFormMaxHistoryCount(config.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT);
     setFormError(null);
     setViewMode("edit");
+  };
+
+  // URLをクリップボードにコピー
+  const handleCopyUrl = (id: string) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const pathname =
+      typeof window !== "undefined" ? window.location.pathname.replace(/\/settings\/?$/, "") : "";
+    const url = `${origin}${pathname}/?id=${encodeURIComponent(id)}`;
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          showNotification(`URLをコピーしました: ${url}`);
+        })
+        .catch(() => {
+          showNotification(`URL: ${url}`);
+        });
+    } else {
+      showNotification(`URL: ${url}`);
+    }
   };
 
   // 履歴リセット
@@ -273,8 +300,22 @@ export default function SettingsPage() {
   // フォーム保存
   const handleSaveForm = (shouldSetActive: boolean) => {
     const trimmedName = formName.trim();
+    const trimmedId = formId.trim();
+
     if (!trimmedName) {
       setFormError("設定名を入力してください");
+      return;
+    }
+    if (!trimmedId) {
+      setFormError("くじIDを入力してください");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedId)) {
+      setFormError("くじIDは半角英数字、ハイフン(-)、アンダースコア(_)のみ使用できます");
+      return;
+    }
+    if (configs.some((c) => c.id === trimmedId && c.id !== editingId)) {
+      setFormError(`くじID「${trimmedId}」は既に他の設定で使用されています`);
       return;
     }
     if (formItems.length < 2) {
@@ -314,7 +355,7 @@ export default function SettingsPage() {
 
     const result = saveConfig(
       {
-        id: editingId || undefined,
+        id: trimmedId,
         name: trimmedName,
         items: cleanItems,
         animationType: formAnimationType,
@@ -325,11 +366,17 @@ export default function SettingsPage() {
         maxHistoryCount: safeMaxHistory,
       },
       shouldSetActive,
+      editingId || undefined,
     );
 
     setConfigs(result.configs);
+    if (editingId && editingId === activeId) {
+      setActiveId(result.savedConfig.id);
+    }
     if (shouldSetActive) {
       setActiveId(result.savedConfig.id);
+      router.push(`/?id=${encodeURIComponent(result.savedConfig.id)}`);
+      return;
     }
     showNotification(
       editingId ? `「${trimmedName}」を更新しました` : `「${trimmedName}」を作成しました`,
@@ -344,7 +391,7 @@ export default function SettingsPage() {
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href="/"
+              href={activeId ? `/?id=${encodeURIComponent(activeId)}` : "/"}
               className="p-1.5 -ml-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5 text-sm font-medium"
             >
               <svg
@@ -411,6 +458,9 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   くじ引きで使用する設定を選択・編集・追加できます
                 </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  設定や履歴などはローカルストレージに保存されます。他のデバイスとは共有出来ません。
+                </p>
               </div>
             </div>
 
@@ -439,6 +489,9 @@ export default function SettingsPage() {
                           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {config.name}
                           </h3>
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            ID: {config.id}
+                          </span>
                           {isActive && (
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
@@ -600,6 +653,31 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs flex-wrap">
                       <button
                         type="button"
+                        onClick={() => handleCopyUrl(config.id)}
+                        className="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors flex items-center gap-1"
+                        title="このくじを直接開くURLをコピー"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <title>URLコピー</title>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                          />
+                        </svg>
+                        <span>URLコピー</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleResetConfigHistory(config)}
                         className="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors flex items-center gap-1"
                         title="抽選履歴をリセット"
@@ -755,6 +833,41 @@ export default function SettingsPage() {
                   placeholder="例: ランチ決めくじ、3択ルーレット"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              {/* Lottery ID (URL parameter identifier) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="config-id-input"
+                    className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    くじID (URL識別子) <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setFormId(generateShortId(5))}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                    title="ランダムな5文字のIDを再生成"
+                  >
+                    <span>🎲 ランダム再生成</span>
+                  </button>
+                </div>
+                <input
+                  id="config-id-input"
+                  type="text"
+                  value={formId}
+                  onChange={(e) => setFormId(e.target.value)}
+                  placeholder="例: lunch, lucky, k7x9p"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                  URL（
+                  <code className="font-mono text-indigo-600 dark:text-indigo-400">
+                    /?id={formId || "..."}
+                  </code>
+                  ）で直接このくじを指定・共有できます。半角英数字、ハイフン(-)、アンダースコア(_)が使用可能です。
+                </span>
               </div>
 
               {/* Animation Type Section */}
