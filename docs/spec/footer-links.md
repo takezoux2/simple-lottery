@@ -10,6 +10,7 @@
 
 - `takezoux2.com` (`https://takezoux2.com`)
 - `bambooq.takezoux2.com` (`https://bambooq.takezoux2.com`)
+- `GitHub` (`https://github.com/takezoux2/simple-lottery`) (GitHubアイコン付きリンク)
 
 ---
 
