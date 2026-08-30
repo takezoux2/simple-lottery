@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="50%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#3730a3" />
+    </linearGradient>
+    <linearGradient id="ticketGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#1e1b4b" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  
+  <!-- Background with rounded corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Outer Glow Circle -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.15" stroke-dasharray="12 8" />
+  
+  <!-- Lottery Ticket (Rotated slightly) -->
+  <g transform="rotate(-8 256 256)" filter="url(#shadow)">
+    <!-- Ticket Body -->
+    <path d="M 128 176 
+             C 128 160, 140 148, 156 148 
+             L 356 148 
+             C 372 148, 384 160, 384 176 
+             L 384 226 
+             A 30 30 0 0 0 384 286 
+             L 384 336 
+             C 384 352, 372 364, 356 364 
+             L 156 364 
+             C 140 364, 128 352, 128 336 
+             L 128 286 
+             A 30 30 0 0 0 128 226 
+             Z" 
+          fill="url(#ticketGrad)" stroke="#ffffff" stroke-width="6"/>
+          
+    <!-- Perforated Line -->
+    <line x1="220" y1="154" x2="220" y2="358" stroke="#78350f" stroke-width="4" stroke-dasharray="8 6" opacity="0.6"/>
+    
+    <!-- Star Icon on Right Side -->
+    <path d="M 302 210 
+             L 312 238 
+             L 342 238 
+             L 318 256 
+             L 327 284 
+             L 302 266 
+             L 277 284 
+             L 286 256 
+             L 262 238 
+             L 292 238 Z" 
+          fill="#ffffff" stroke="#b45309" stroke-width="2"/>
+          
+    <!-- Text or Lucky label -->
+    <text x="174" y="270" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="44" fill="#78350f" text-anchor="middle">777</text>
+  </g>
+  
+  <!-- Sparkles -->
+  <g fill="#ffffff">
+    <path d="M 120 100 Q 120 120 100 120 Q 120 120 120 140 Q 120 120 140 120 Q 120 120 120 100 Z" opacity="0.9"/>
+    <path d="M 400 110 Q 400 125 385 125 Q 400 125 400 140 Q 400 125 415 125 Q 400 125 400 110 Z" opacity="0.9"/>
+    <path d="M 390 400 Q 390 415 375 415 Q 390 415 390 430 Q 390 415 405 415 Q 390 415 390 400 Z" opacity="0.8"/>
+    <path d="M 110 390 Q 110 402 98 402 Q 110 402 110 414 Q 110 402 122 402 Q 110 402 110 390 Z" opacity="0.7"/>
+  </g>
+</svg>
