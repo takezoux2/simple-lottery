@@ -5,10 +5,68 @@ export interface LotteryItem {
   color?: string;
 }
 
-export const DEFAULT_PROBABILITY_TABLE: LotteryItem[] = [
-  { id: "win", label: "当たり", ratio: 0.3, color: "#10b981" },
-  { id: "lose", label: "はずれ", ratio: 0.7, color: "#6b7280" },
+export interface LotteryConfig {
+  id: string;
+  name: string;
+  items: LotteryItem[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const PRESET_COLORS = [
+  "#4f46e5", // indigo
+  "#059669", // emerald
+  "#d97706", // amber
+  "#e11d48", // rose
+  "#0284c7", // sky
+  "#7c3aed", // violet
+  "#ea580c", // orange
+  "#0d9488", // teal
+  "#db2777", // pink
+  "#4b5563", // slate
 ];
+
+export const DEFAULT_CONFIGS: LotteryConfig[] = [
+  {
+    id: "preset-standard",
+    name: "スタンダードくじ (2択)",
+    items: [
+      { id: "item-1", label: "当たり", ratio: 3, color: "#059669" },
+      { id: "item-2", label: "はずれ", ratio: 7, color: "#4b5563" },
+    ],
+    createdAt: 1700000000000,
+    updatedAt: 1700000000000,
+  },
+  {
+    id: "preset-omikuji",
+    name: "おみくじ (5択)",
+    items: [
+      { id: "item-1", label: "大吉", ratio: 1, color: "#e11d48" },
+      { id: "item-2", label: "中吉", ratio: 2, color: "#ea580c" },
+      { id: "item-3", label: "小吉", ratio: 3, color: "#d97706" },
+      { id: "item-4", label: "吉", ratio: 3, color: "#059669" },
+      { id: "item-5", label: "凶", ratio: 1, color: "#4b5563" },
+    ],
+    createdAt: 1700000000000,
+    updatedAt: 1700000000000,
+  },
+  {
+    id: "preset-dice",
+    name: "サイコロ (6択)",
+    items: [
+      { id: "item-1", label: "1", ratio: 1, color: "#4f46e5" },
+      { id: "item-2", label: "2", ratio: 1, color: "#0284c7" },
+      { id: "item-3", label: "3", ratio: 1, color: "#059669" },
+      { id: "item-4", label: "4", ratio: 1, color: "#d97706" },
+      { id: "item-5", label: "5", ratio: 1, color: "#ea580c" },
+      { id: "item-6", label: "6", ratio: 1, color: "#e11d48" },
+    ],
+    createdAt: 1700000000000,
+    updatedAt: 1700000000000,
+  },
+];
+
+export const DEFAULT_PROBABILITY_TABLE: LotteryItem[] = DEFAULT_CONFIGS[0].items;
 
 /**
  * 確率テーブルに基づいてくじ引き結果を1件選出します
@@ -44,7 +102,7 @@ export function chooseLottery(
 /**
  * 各項目のパーセンテージ（0〜100%）を計算します
  */
-export function getPercentage(itemRatio: number, table: LotteryItem[]): number {
+export function getPercentage(itemRatio: number, table: { ratio: number }[]): number {
   const total = table.reduce((acc, cur) => acc + Math.max(0, cur.ratio), 0);
   if (total <= 0) return 0;
   return Math.round((Math.max(0, itemRatio) / total) * 1000) / 10;

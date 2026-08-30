@@ -1,12 +1,20 @@
 "use client";
 
 import {
-  DEFAULT_PROBABILITY_TABLE,
+  DEFAULT_CONFIGS,
+  type LotteryConfig,
   type LotteryItem,
   chooseLottery,
   getPercentage,
 } from "@/lib/lottery";
-import { useCallback, useState } from "react";
+import {
+  getActiveConfig,
+  getActiveConfigId,
+  getStoredConfigs,
+  setActiveConfigId,
+} from "@/lib/storage";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
 interface DrawHistoryItem {
   timestamp: string;
@@ -14,24 +22,43 @@ interface DrawHistoryItem {
 }
 
 export default function Home() {
-  const [table] = useState<LotteryItem[]>(DEFAULT_PROBABILITY_TABLE);
+  const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
+  const [activeConfig, setActiveConfig] = useState<LotteryConfig>(DEFAULT_CONFIGS[0]);
   const [currentResult, setCurrentResult] = useState<LotteryItem | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<DrawHistoryItem[]>([]);
 
+  // LocalStorageから設定をロード
+  useEffect(() => {
+    const loadedConfigs = getStoredConfigs();
+    const currentActive = getActiveConfig();
+    setConfigs(loadedConfigs);
+    setActiveConfig(currentActive);
+  }, []);
+
+  // 設定の切り替え
+  const handleSelectConfig = (id: string) => {
+    setActiveConfigId(id);
+    const target = configs.find((c) => c.id === id);
+    if (target) {
+      setActiveConfig(target);
+      setCurrentResult(null);
+    }
+  };
+
   const handleDraw = useCallback(() => {
-    if (isDrawing) return;
+    if (isDrawing || !activeConfig.items || activeConfig.items.length === 0) return;
     setIsDrawing(true);
 
-    // 小さなルーレット風演出
+    const items = activeConfig.items;
     let count = 0;
     const interval = setInterval(() => {
-      const tempIndex = Math.floor(Math.random() * table.length);
-      setCurrentResult(table[tempIndex]);
+      const tempIndex = Math.floor(Math.random() * items.length);
+      setCurrentResult(items[tempIndex]);
       count++;
       if (count > 8) {
         clearInterval(interval);
-        const finalResult = chooseLottery(table);
+        const finalResult = chooseLottery(items);
         setCurrentResult(finalResult);
         setHistory((prev) => [
           {
@@ -43,15 +70,12 @@ export default function Home() {
         setIsDrawing(false);
       }
     }, 60);
-  }, [table, isDrawing]);
+  }, [activeConfig, isDrawing]);
 
   const handleResetHistory = () => {
     setHistory([]);
     setCurrentResult(null);
   };
-
-  const winCount = history.filter((h) => h.result.id === "win").length;
-  const winRate = history.length > 0 ? Math.round((winCount / history.length) * 100) : 0;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-[family-name:var(--font-geist-sans)] transition-colors">
@@ -66,36 +90,102 @@ export default function Home() {
               PWA / SSG
             </span>
           </div>
+
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition-all"
+          >
+            <svg
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <title>確率設定</title>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+            <span>確率設定</span>
+          </Link>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-8 flex flex-col items-center gap-8">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 flex flex-col items-center gap-6">
+        {/* Preset Switcher Bar */}
+        <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-2 overflow-x-auto">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0 mr-1">
+              設定:
+            </span>
+            {configs.map((cfg) => {
+              const isSelected = cfg.id === activeConfig.id;
+              return (
+                <button
+                  key={cfg.id}
+                  type="button"
+                  onClick={() => handleSelectConfig(cfg.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    isSelected
+                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/30"
+                      : "bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {cfg.name}
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/settings"
+            className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-1"
+          >
+            + 編集 / 新規
+          </Link>
+        </div>
+
         {/* Lottery Card */}
         <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center gap-6">
-          <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
-            ボタンを押してくじを引いてください
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+              {activeConfig.name}
+            </span>
+            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              ボタンを押してくじを引いてください
+            </div>
           </div>
 
           {/* Result Display Box */}
           <div
             className={`w-full max-w-sm h-48 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${
-              currentResult?.id === "win"
-                ? "bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500 shadow-lg shadow-amber-200/50 dark:shadow-none"
-                : currentResult?.id === "lose"
-                  ? "bg-slate-100 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700"
-                  : "bg-slate-50 dark:bg-slate-800/30 border-dashed border-slate-300 dark:border-slate-700"
+              currentResult
+                ? "shadow-lg bg-slate-50 dark:bg-slate-800/50"
+                : "bg-slate-50 dark:bg-slate-800/30 border-dashed border-slate-300 dark:border-slate-700"
             }`}
+            style={{
+              borderColor: currentResult?.color || undefined,
+            }}
           >
             {currentResult ? (
               <div
-                className={`text-6xl font-black tracking-wider transition-transform duration-150 ${
+                className={`text-5xl sm:text-6xl font-black tracking-wider transition-transform duration-150 ${
                   isDrawing ? "scale-90 opacity-70" : "scale-100 opacity-100"
-                } ${
-                  currentResult.id === "win"
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-slate-600 dark:text-slate-300"
                 }`}
+                style={{
+                  color: currentResult.color || "inherit",
+                }}
               >
                 {currentResult.label}
               </div>
@@ -119,11 +209,37 @@ export default function Home() {
 
         {/* Probability Table Card */}
         <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
-            確率設定
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              確率内訳 ({activeConfig.name})
+            </h2>
+            <Link
+              href="/settings"
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              設定を編集
+            </Link>
+          </div>
+
+          {/* Mini preview bar */}
+          <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-3">
+            {activeConfig.items.map((item, idx) => {
+              const pct = getPercentage(item.ratio, activeConfig.items);
+              return (
+                <div
+                  key={item.id || idx}
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: item.color,
+                  }}
+                  className="h-full"
+                />
+              );
+            })}
+          </div>
+
           <div className="flex flex-col gap-2">
-            {table.map((item) => (
+            {activeConfig.items.map((item) => (
               <div
                 key={item.id}
                 className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/50"
@@ -135,9 +251,14 @@ export default function Home() {
                   />
                   <span className="font-medium">{item.label}</span>
                 </div>
-                <span className="font-semibold text-slate-600 dark:text-slate-400">
-                  {getPercentage(item.ratio, table)}%
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
+                    比重: {item.ratio}
+                  </span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
+                    {getPercentage(item.ratio, activeConfig.items)}%
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -159,39 +280,57 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Stats Summary */}
-            <div className="grid grid-cols-3 gap-2 mb-4 text-center">
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl">
-                <div className="text-xs text-slate-500 dark:text-slate-400">総回数</div>
-                <div className="text-base font-bold">{history.length}回</div>
+            {/* Stats Summary Breakdown by Items */}
+            <div className="mb-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                総回数:{" "}
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {history.length}回
+                </span>
               </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl">
-                <div className="text-xs text-slate-500 dark:text-slate-400">当たり</div>
-                <div className="text-base font-bold text-amber-600 dark:text-amber-400">
-                  {winCount}回
-                </div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl">
-                <div className="text-xs text-slate-500 dark:text-slate-400">当選率</div>
-                <div className="text-base font-bold text-indigo-600 dark:text-indigo-400">
-                  {winRate}%
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center">
+                {activeConfig.items.map((item) => {
+                  const count = history.filter(
+                    (h) => h.result.id === item.id || h.result.label === item.label,
+                  ).length;
+                  const rate = Math.round((count / history.length) * 100);
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl flex flex-col items-center"
+                    >
+                      <div className="flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 truncate max-w-full">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                      <div className="text-base font-bold mt-0.5">
+                        {count}回
+                        <span className="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">
+                          ({rate}%)
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* History List */}
-            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+            {/* History Badges */}
+            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto pt-2 border-t border-slate-100 dark:border-slate-800">
               {history.map((h, index) => (
                 <div
                   key={`${h.timestamp}-${index}`}
-                  className={`text-xs px-2.5 py-1 rounded-md font-medium ${
-                    h.result.id === "win"
-                      ? "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                  }`}
+                  className="text-xs px-2.5 py-1 rounded-md font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
                 >
-                  {h.result.label}
-                  <span className="ml-1.5 opacity-60 text-[10px]">{h.timestamp}</span>
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: h.result.color }}
+                  />
+                  <span>{h.result.label}</span>
+                  <span className="opacity-50 text-[10px]">{h.timestamp}</span>
                 </div>
               ))}
             </div>
