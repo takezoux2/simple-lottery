@@ -8,18 +8,16 @@ import {
   getPercentage,
 } from "@/lib/lottery";
 import {
+  type DrawHistoryItem,
+  addHistoryItem,
+  clearHistory,
   getActiveConfig,
-  getActiveConfigId,
   getStoredConfigs,
+  getStoredHistory,
   setActiveConfigId,
 } from "@/lib/storage";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-
-interface DrawHistoryItem {
-  timestamp: string;
-  result: LotteryItem;
-}
 
 export default function Home() {
   const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
@@ -28,12 +26,13 @@ export default function Home() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<DrawHistoryItem[]>([]);
 
-  // LocalStorageから設定をロード
+  // LocalStorageから設定と履歴をロード
   useEffect(() => {
     const loadedConfigs = getStoredConfigs();
     const currentActive = getActiveConfig();
     setConfigs(loadedConfigs);
     setActiveConfig(currentActive);
+    setHistory(getStoredHistory(currentActive.id));
   }, []);
 
   // 設定の切り替え
@@ -43,6 +42,7 @@ export default function Home() {
     if (target) {
       setActiveConfig(target);
       setCurrentResult(null);
+      setHistory(getStoredHistory(target.id));
     }
   };
 
@@ -60,19 +60,22 @@ export default function Home() {
         clearInterval(interval);
         const finalResult = chooseLottery(items);
         setCurrentResult(finalResult);
-        setHistory((prev) => [
-          {
-            timestamp: new Date().toLocaleTimeString(),
-            result: finalResult,
-          },
-          ...prev.slice(0, 19),
-        ]);
+        const updatedHistory = addHistoryItem(
+          activeConfig.id,
+          finalResult,
+          activeConfig.maxHistoryCount ?? 20,
+        );
+        setHistory(updatedHistory);
         setIsDrawing(false);
       }
     }, 60);
   }, [activeConfig, isDrawing]);
 
   const handleResetHistory = () => {
+    if (!window.confirm(`「${activeConfig.name}」の抽選履歴をリセットしてもよろしいですか？`)) {
+      return;
+    }
+    clearHistory(activeConfig.id);
     setHistory([]);
     setCurrentResult(null);
   };
@@ -275,11 +278,11 @@ export default function Home() {
         )}
 
         {/* Stats & History */}
-        {history.length > 0 && (
+        {activeConfig.showHistory !== false && history.length > 0 && (
           <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                抽選履歴（直近20回）
+                抽選履歴（直近{activeConfig.maxHistoryCount ?? 20}回）
               </h2>
               <button
                 type="button"

@@ -8,10 +8,15 @@ import {
   getPercentage,
 } from "@/lib/lottery";
 import {
+  DEFAULT_MAX_HISTORY_COUNT,
+  MAX_MAX_HISTORY_COUNT,
+  MIN_MAX_HISTORY_COUNT,
+  clearHistory,
   deleteConfig,
   duplicateConfig,
   generateId,
   getActiveConfigId,
+  getHistoryCount,
   getStoredConfigs,
   resetToDefaultConfigs,
   saveConfig,
@@ -34,12 +39,15 @@ export default function SettingsPage() {
   const [activeId, setActiveId] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [_historyVersion, setHistoryVersion] = useState(0);
 
   // フォーム状態
   const [formName, setFormName] = useState("");
   const [formItems, setFormItems] = useState<FormItemState[]>([]);
   const [formShowLabel, setFormShowLabel] = useState(true);
   const [formShowProbability, setFormShowProbability] = useState(true);
+  const [formShowHistory, setFormShowHistory] = useState(true);
+  const [formMaxHistoryCount, setFormMaxHistoryCount] = useState(DEFAULT_MAX_HISTORY_COUNT);
   const [formError, setFormError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [activeColorPickerIndex, setActiveColorPickerIndex] = useState<number | null>(null);
@@ -77,6 +85,8 @@ export default function SettingsPage() {
     ]);
     setFormShowLabel(true);
     setFormShowProbability(true);
+    setFormShowHistory(true);
+    setFormMaxHistoryCount(DEFAULT_MAX_HISTORY_COUNT);
     setFormError(null);
     setViewMode("create");
   };
@@ -95,8 +105,20 @@ export default function SettingsPage() {
     );
     setFormShowLabel(config.showLabel !== false);
     setFormShowProbability(config.showProbability !== false);
+    setFormShowHistory(config.showHistory !== false);
+    setFormMaxHistoryCount(config.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT);
     setFormError(null);
     setViewMode("edit");
+  };
+
+  // 履歴リセット
+  const handleResetConfigHistory = (config: { id: string; name: string }) => {
+    if (!window.confirm(`「${config.name}」の抽選履歴をリセットしてもよろしいですか？`)) {
+      return;
+    }
+    clearHistory(config.id);
+    setHistoryVersion((v) => v + 1);
+    showNotification(`「${config.name}」の抽選履歴をリセットしました`);
   };
 
   // アクティブ設定の切り替え
@@ -247,6 +269,11 @@ export default function SettingsPage() {
       color: item.color,
     }));
 
+    const safeMaxHistory = Math.min(
+      MAX_MAX_HISTORY_COUNT,
+      Math.max(MIN_MAX_HISTORY_COUNT, Math.floor(formMaxHistoryCount || DEFAULT_MAX_HISTORY_COUNT)),
+    );
+
     const result = saveConfig(
       {
         id: editingId || undefined,
@@ -254,6 +281,8 @@ export default function SettingsPage() {
         items: cleanItems,
         showLabel: formShowLabel,
         showProbability: formShowProbability,
+        showHistory: formShowHistory,
+        maxHistoryCount: safeMaxHistory,
       },
       shouldSetActive,
     );
@@ -382,7 +411,7 @@ export default function SettingsPage() {
                             項目数: {config.items.length}件 / 比重合計: {totalCfgRatio}
                           </span>
                           <span>•</span>
-                          <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1.5 flex-wrap">
                             凡例:
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -401,6 +430,20 @@ export default function SettingsPage() {
                               }`}
                             >
                               {config.showProbability !== false ? "確率表示" : "確率非表示"}
+                            </span>
+                          </span>
+                          <span>•</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            履歴:
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                config.showHistory !== false
+                                  ? "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                  : "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"
+                              }`}
+                            >
+                              {config.showHistory !== false ? "表示" : "非表示"}
+                              {` (最大${config.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT}件 / 保存${getHistoryCount(config.id)}件)`}
                             </span>
                           </span>
                         </div>
@@ -465,7 +508,32 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleResetConfigHistory(config)}
+                        className="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors flex items-center gap-1"
+                        title="抽選履歴をリセット"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <title>履歴リセット</title>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                        <span>履歴リセット</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleOpenEdit(config)}
@@ -600,12 +668,12 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Display Options Section */}
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col gap-3">
+              {/* Display & History Options Section */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
                 <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  くじ引き画面の凡例表示設定
+                  表示・履歴オプション
                 </div>
-                <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -628,6 +696,105 @@ export default function SettingsPage() {
                       凡例に確率を表示
                     </span>
                   </label>
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formShowHistory}
+                      onChange={(e) => setFormShowHistory(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-900 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      抽選履歴を表示
+                    </span>
+                  </label>
+                </div>
+
+                {/* Max History Count Stepper & Reset in Edit Mode */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center gap-3">
+                    <label
+                      htmlFor="max-history-input"
+                      className="text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0"
+                    >
+                      最大履歴保存件数 (1〜500件):
+                    </label>
+                    <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormMaxHistoryCount((prev) =>
+                            Math.max(MIN_MAX_HISTORY_COUNT, prev - 5),
+                          )
+                        }
+                        disabled={formMaxHistoryCount <= MIN_MAX_HISTORY_COUNT}
+                        className="px-2.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-sm"
+                        title="5件減らす"
+                      >
+                        -
+                      </button>
+                      <input
+                        id="max-history-input"
+                        type="number"
+                        min={MIN_MAX_HISTORY_COUNT}
+                        max={MAX_MAX_HISTORY_COUNT}
+                        step="1"
+                        value={formMaxHistoryCount}
+                        onChange={(e) => {
+                          const val = Number.parseInt(e.target.value, 10);
+                          setFormMaxHistoryCount(
+                            Number.isNaN(val) ? DEFAULT_MAX_HISTORY_COUNT : val,
+                          );
+                        }}
+                        className="w-14 text-center text-xs font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormMaxHistoryCount((prev) =>
+                            Math.min(MAX_MAX_HISTORY_COUNT, prev + 5),
+                          )
+                        }
+                        disabled={formMaxHistoryCount >= MAX_MAX_HISTORY_COUNT}
+                        className="px-2.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-sm"
+                        title="5件増やす"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-xs text-slate-400">件</span>
+                  </div>
+
+                  {/* Reset History Button in Edit Mode */}
+                  {viewMode === "edit" && editingId && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleResetConfigHistory({
+                          id: editingId,
+                          name: formName || "この設定",
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800 transition-colors self-start sm:self-auto"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <title>履歴リセット</title>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                      <span>この設定の履歴をリセット ({getHistoryCount(editingId)}件)</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

@@ -11,6 +11,8 @@ export interface LotteryConfig {
   items: LotteryItem[];
   showLabel?: boolean;
   showProbability?: boolean;
+  showHistory?: boolean;
+  maxHistoryCount?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -38,6 +40,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     ],
     showLabel: true,
     showProbability: true,
+    showHistory: true,
+    maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },
@@ -53,6 +57,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     ],
     showLabel: true,
     showProbability: true,
+    showHistory: true,
+    maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },
@@ -69,6 +75,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     ],
     showLabel: true,
     showProbability: true,
+    showHistory: true,
+    maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },

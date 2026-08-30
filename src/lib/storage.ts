@@ -2,6 +2,19 @@ import { DEFAULT_CONFIGS, type LotteryConfig, type LotteryItem } from "./lottery
 
 export const LOTTERY_CONFIGS_KEY = "simple_lottery_configs_v1";
 export const LOTTERY_ACTIVE_ID_KEY = "simple_lottery_active_id_v1";
+export const LOTTERY_HISTORY_KEY = "simple_lottery_history_v1";
+
+export const DEFAULT_MAX_HISTORY_COUNT = 20;
+export const MIN_MAX_HISTORY_COUNT = 1;
+export const MAX_MAX_HISTORY_COUNT = 500;
+
+export interface DrawHistoryItem {
+  id: string;
+  timestamp: string;
+  result: LotteryItem;
+  configId: string;
+  createdAt: number;
+}
 
 function isClient(): boolean {
   return typeof window !== "undefined" || typeof localStorage !== "undefined";
@@ -107,11 +120,21 @@ export function saveConfig(
     items: LotteryItem[];
     showLabel?: boolean;
     showProbability?: boolean;
+    showHistory?: boolean;
+    maxHistoryCount?: number;
   },
   setActive = false,
 ): { savedConfig: LotteryConfig; configs: LotteryConfig[] } {
   const configs = getStoredConfigs();
   const now = Date.now();
+
+  const validatedMaxHistory = Math.min(
+    MAX_MAX_HISTORY_COUNT,
+    Math.max(
+      MIN_MAX_HISTORY_COUNT,
+      Math.floor(configData.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT),
+    ),
+  );
 
   let savedConfig: LotteryConfig;
 
@@ -123,6 +146,8 @@ export function saveConfig(
       items: configData.items,
       showLabel: configData.showLabel !== false,
       showProbability: configData.showProbability !== false,
+      showHistory: configData.showHistory !== false,
+      maxHistoryCount: validatedMaxHistory,
       createdAt: configs.find((c) => c.id === configData.id)?.createdAt || now,
       updatedAt: now,
     };
@@ -142,6 +167,8 @@ export function saveConfig(
     items: configData.items,
     showLabel: configData.showLabel !== false,
     showProbability: configData.showProbability !== false,
+    showHistory: configData.showHistory !== false,
+    maxHistoryCount: validatedMaxHistory,
     createdAt: now,
     updatedAt: now,
   };
@@ -155,7 +182,7 @@ export function saveConfig(
 }
 
 /**
- * 確率設定を複製します
+ * 確率設定を複製します（履歴は複製せず0件から開始）
  */
 export function duplicateConfig(
   id: string,
@@ -174,6 +201,8 @@ export function duplicateConfig(
     })),
     showLabel: target.showLabel !== false,
     showProbability: target.showProbability !== false,
+    showHistory: target.showHistory !== false,
+    maxHistoryCount: target.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT,
     createdAt: now,
     updatedAt: now,
   };
@@ -184,7 +213,7 @@ export function duplicateConfig(
 }
 
 /**
- * 確率設定を削除します
+ * 確率設定を削除します（紐づく履歴も削除）
  */
 export function deleteConfig(id: string): {
   success: boolean;
@@ -199,6 +228,9 @@ export function deleteConfig(id: string): {
 
   const updatedConfigs = configs.filter((c) => c.id !== id);
   saveStoredConfigs(updatedConfigs);
+
+  // 紐づく履歴も削除
+  clearHistory(id);
 
   let activeId = getActiveConfigId();
   if (activeId === id) {
@@ -217,4 +249,118 @@ export function resetToDefaultConfigs(): { configs: LotteryConfig[]; activeId: s
   const activeId = DEFAULT_CONFIGS[0].id;
   setActiveConfigId(activeId);
   return { configs: DEFAULT_CONFIGS, activeId };
+}
+
+/* ==========================================================================
+   履歴 (History) 管理 API
+   ========================================================================== */
+
+/**
+ * 全設定の履歴マップをLocalStorageから取得
+ */
+function getAllStoredHistories(): Record<string, DrawHistoryItem[]> {
+  if (!isClient()) return {};
+  try {
+    const raw = localStorage.getItem(LOTTERY_HISTORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return {};
+  } catch (error) {
+    console.error("Failed to read history from localStorage:", error);
+    return {};
+  }
+}
+
+/**
+ * 全設定の履歴マップをLocalStorageに保存
+ */
+function saveAllStoredHistories(histories: Record<string, DrawHistoryItem[]>): void {
+  if (!isClient()) return;
+  try {
+    localStorage.setItem(LOTTERY_HISTORY_KEY, JSON.stringify(histories));
+  } catch (error) {
+    console.error("Failed to save history to localStorage:", error);
+  }
+}
+
+/**
+ * 指定された設定IDの抽選履歴を取得します
+ */
+export function getStoredHistory(configId: string): DrawHistoryItem[] {
+  if (!configId) return [];
+  const all = getAllStoredHistories();
+  const list = all[configId];
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * 指定された設定IDの抽選履歴を保存します
+ */
+export function saveStoredHistory(configId: string, history: DrawHistoryItem[]): void {
+  if (!configId) return;
+  const all = getAllStoredHistories();
+  all[configId] = history;
+  saveAllStoredHistories(all);
+}
+
+/**
+ * 抽選結果を1件履歴に追加し、最大件数（maxCount）でトリムして保存します
+ */
+export function addHistoryItem(
+  configId: string,
+  result: LotteryItem,
+  maxCount = DEFAULT_MAX_HISTORY_COUNT,
+): DrawHistoryItem[] {
+  if (!configId) return [];
+  const validMax = Math.min(
+    MAX_MAX_HISTORY_COUNT,
+    Math.max(MIN_MAX_HISTORY_COUNT, Math.floor(maxCount)),
+  );
+  const current = getStoredHistory(configId);
+  const now = new Date();
+  const newItem: DrawHistoryItem = {
+    id: generateId(),
+    timestamp: now.toLocaleTimeString(),
+    result,
+    configId,
+    createdAt: now.getTime(),
+  };
+
+  const updated = [newItem, ...current].slice(0, validMax);
+  saveStoredHistory(configId, updated);
+  return updated;
+}
+
+/**
+ * 指定された設定IDの抽選履歴をクリア（リセット）します
+ */
+export function clearHistory(configId: string): void {
+  if (!configId) return;
+  const all = getAllStoredHistories();
+  if (all[configId]) {
+    delete all[configId];
+    saveAllStoredHistories(all);
+  }
+}
+
+/**
+ * 全設定の履歴をクリアします
+ */
+export function clearAllHistory(): void {
+  if (!isClient()) return;
+  try {
+    localStorage.removeItem(LOTTERY_HISTORY_KEY);
+  } catch (error) {
+    console.error("Failed to clear all history:", error);
+  }
+}
+
+/**
+ * 指定された設定IDの保存済み履歴件数を取得します
+ */
+export function getHistoryCount(configId: string): number {
+  return getStoredHistory(configId).length;
 }
