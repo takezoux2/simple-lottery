@@ -1,6 +1,7 @@
 "use client";
 
 import { Footer } from "@/components/Footer";
+import * as gtag from "@/lib/gtag";
 import {
   DEFAULT_CONFIGS,
   type LotteryAnimationType,
@@ -370,6 +371,14 @@ export default function SettingsPage() {
     );
 
     setConfigs(result.configs);
+    gtag.event({
+      action: "save_config",
+      category: "settings",
+      label: trimmedName,
+      config_id: result.savedConfig.id,
+      item_count: cleanItems.length,
+      is_new: !editingId,
+    });
     if (editingId && editingId === activeId) {
       setActiveId(result.savedConfig.id);
     }

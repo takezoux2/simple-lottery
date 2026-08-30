@@ -2,6 +2,7 @@
 
 import { Footer } from "@/components/Footer";
 import { RouletteWheel } from "@/components/RouletteWheel";
+import * as gtag from "@/lib/gtag";
 import {
   DEFAULT_CONFIGS,
   type LotteryConfig,
@@ -126,6 +127,16 @@ function HomeContent() {
       setHitCounts(updatedHitCounts);
       setHistory(updatedHistory);
       setIsDrawing(false);
+      gtag.event({
+        action: "draw_lottery",
+        category: "lottery",
+        label: targetWheelResult.label,
+        config_id: activeConfig.id,
+        config_name: activeConfig.name,
+        item_id: targetWheelResult.id,
+        item_label: targetWheelResult.label,
+        animation_type: "wheel",
+      });
     }
   }, [activeConfig, targetWheelResult]);
 
@@ -167,6 +178,16 @@ function HomeContent() {
           setHistory(updatedHistory);
           setIsDrawing(false);
           timerRef.current = null;
+          gtag.event({
+            action: "draw_lottery",
+            category: "lottery",
+            label: finalResult.label,
+            config_id: activeConfig.id,
+            config_name: activeConfig.name,
+            item_id: finalResult.id,
+            item_label: finalResult.label,
+            animation_type: "flashcard",
+          });
           return;
         }
 
@@ -200,6 +221,12 @@ function HomeContent() {
     setHitCounts({});
     setCurrentResult(null);
     setTargetWheelResult(null);
+    gtag.event({
+      action: "clear_history",
+      category: "lottery",
+      label: activeConfig.name,
+      config_id: activeConfig.id,
+    });
   };
 
   return (
