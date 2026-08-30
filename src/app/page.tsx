@@ -23,7 +23,7 @@ import {
   setActiveConfigId,
 } from "@/lib/storage";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function Home() {
   const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
@@ -33,6 +33,16 @@ export default function Home() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<DrawHistoryItem[]>([]);
   const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // アンマウント時のタイマークリーンアップ
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   // LocalStorageから設定・履歴・当選数をロード
   useEffect(() => {
@@ -46,6 +56,11 @@ export default function Home() {
 
   // 設定の切り替え
   const handleSelectConfig = (id: string) => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsDrawing(false);
     setActiveConfigId(id);
     const target = configs.find((c) => c.id === id);
     if (target) {
@@ -94,16 +109,21 @@ export default function Home() {
       setCurrentResult(null);
       setIsDrawing(true);
     } else {
-      // フラッシュカード演出（文字の高速切り替え）
+      // フラッシュカード演出（3秒間、徐々に表示時間を伸ばすイージング減速演出）
       setIsDrawing(true);
-      let count = 0;
-      const interval = setInterval(() => {
-        const tempIndex = Math.floor(Math.random() * currentAvailable.length);
-        setCurrentResult(currentAvailable[tempIndex]);
-        count++;
-        if (count > 8) {
-          clearInterval(interval);
-          const finalResult = chooseLottery(currentAvailable);
+      const finalResult = chooseLottery(currentAvailable);
+      const TOTAL_DURATION = 3000;
+      const MIN_DELAY = 50;
+      const MAX_DELAY = 450;
+      const startTime = performance.now();
+      let lastIndex = -1;
+
+      const step = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(1, elapsed / TOTAL_DURATION);
+
+        if (progress >= 1) {
+          // 3秒経過: 最終結果を表示して確定
           setCurrentResult(finalResult);
           const updatedHistory = addHistoryItem(
             activeConfig.id,
@@ -114,8 +134,26 @@ export default function Home() {
           setHitCounts(updatedHitCounts);
           setHistory(updatedHistory);
           setIsDrawing(false);
+          timerRef.current = null;
+          return;
         }
-      }, 60);
+
+        // 次の表示項目を選択（2つ以上ある場合は直前と重複しないようにする）
+        let nextIndex = Math.floor(Math.random() * currentAvailable.length);
+        if (currentAvailable.length > 1 && nextIndex === lastIndex) {
+          nextIndex =
+            (nextIndex + 1 + Math.floor(Math.random() * (currentAvailable.length - 1))) %
+            currentAvailable.length;
+        }
+        lastIndex = nextIndex;
+        setCurrentResult(currentAvailable[nextIndex]);
+
+        // 徐々に遅延を長くして減速感を演出 (progress^1.8)
+        const currentDelay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * progress ** 1.8;
+        timerRef.current = setTimeout(step, currentDelay);
+      };
+
+      step();
     }
   }, [activeConfig, hitCounts, isDrawing]);
 
@@ -136,107 +174,82 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-[family-name:var(--font-geist-sans)] transition-colors">
       {/* Header */}
       <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-amber-500 bg-clip-text text-transparent">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-amber-500 bg-clip-text text-transparent truncate">
               Simple Lottery
-            </span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-medium border border-emerald-200 dark:border-emerald-800">
-              PWA / SSG
             </span>
           </div>
 
-          <Link
-            href="/settings"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition-all"
-          >
-            <svg
-              aria-hidden="true"
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* 抽選種類ドロップダウン */}
+            <div className="relative">
+              <select
+                aria-label="抽選種類の選択"
+                value={activeConfig.id}
+                onChange={(e) => handleSelectConfig(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer max-w-[140px] sm:max-w-[200px] truncate transition-colors"
+              >
+                {configs.map((cfg) => (
+                  <option key={cfg.id} value={cfg.id}>
+                    {cfg.animationType === "wheel" ? "🎡 " : "🎴 "}
+                    {cfg.name}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500 dark:text-slate-400">
+                <svg
+                  aria-hidden="true"
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <Link
+              href="/settings"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition-all shrink-0"
             >
-              <title>確率設定</title>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            <span>確率設定</span>
-          </Link>
+              <svg
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <title>確率設定</title>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <span>確率設定</span>
+            </Link>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 flex flex-col items-center gap-6">
-        {/* Preset Switcher Bar */}
-        <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-2 overflow-x-auto">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0 mr-1">
-              設定:
-            </span>
-            {configs.map((cfg) => {
-              const isSelected = cfg.id === activeConfig.id;
-              return (
-                <button
-                  key={cfg.id}
-                  type="button"
-                  onClick={() => handleSelectConfig(cfg.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    isSelected
-                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/30"
-                      : "bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  <span>{cfg.animationType === "wheel" ? "🎡" : "🎴"}</span>
-                  <span>{cfg.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <Link
-            href="/settings"
-            className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-1"
-          >
-            + 編集 / 新規
-          </Link>
-        </div>
-
         {/* Lottery Main Card */}
         <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center gap-6">
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                <span>
-                  {activeConfig.animationType === "wheel"
-                    ? "🎡 円盤ルーレット"
-                    : "🎴 フラッシュカード"}
-                </span>
-                <span>•</span>
-                <span>{activeConfig.name}</span>
-              </span>
-            </div>
-            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              {allLimitsReached
-                ? "すべての項目が上限に達しました"
-                : isDrawing
-                  ? activeConfig.animationType === "wheel"
-                    ? "ルーレット回転中..."
-                    : "抽選中..."
-                  : "ボタンを押してくじを引いてください"}
-            </div>
-          </div>
-
           {/* Animation View: Wheel vs Flashcard */}
           {activeConfig.animationType === "wheel" ? (
             <div className="flex flex-col items-center gap-4 w-full">
