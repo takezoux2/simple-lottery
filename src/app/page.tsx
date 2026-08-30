@@ -1,5 +1,6 @@
 "use client";
 
+import { Footer } from "@/components/Footer";
 import { RouletteWheel } from "@/components/RouletteWheel";
 import {
   DEFAULT_CONFIGS,
@@ -527,9 +528,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-400 dark:text-slate-600">
-        Simple Lottery &copy; {new Date().getFullYear()}
-      </footer>
+      <Footer />
     </div>
   );
 }

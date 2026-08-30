@@ -1,5 +1,6 @@
 "use client";
 
+import { Footer } from "@/components/Footer";
 import {
   DEFAULT_CONFIGS,
   type LotteryAnimationType,
@@ -1181,9 +1182,7 @@ export default function SettingsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-400 dark:text-slate-600">
-        Simple Lottery &copy; {new Date().getFullYear()}
-      </footer>
+      <Footer />
     </div>
   );
 }
