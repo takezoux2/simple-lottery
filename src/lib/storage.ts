@@ -3,6 +3,7 @@ import { DEFAULT_CONFIGS, type LotteryConfig, type LotteryItem } from "./lottery
 export const LOTTERY_CONFIGS_KEY = "simple_lottery_configs_v1";
 export const LOTTERY_ACTIVE_ID_KEY = "simple_lottery_active_id_v1";
 export const LOTTERY_HISTORY_KEY = "simple_lottery_history_v1";
+export const LOTTERY_HIT_COUNTS_KEY = "simple_lottery_hit_counts_v1";
 
 export const DEFAULT_MAX_HISTORY_COUNT = 20;
 export const MIN_MAX_HISTORY_COUNT = 1;
@@ -121,6 +122,7 @@ export function saveConfig(
     showLabel?: boolean;
     showProbability?: boolean;
     showHistory?: boolean;
+    showLimit?: boolean;
     maxHistoryCount?: number;
   },
   setActive = false,
@@ -147,6 +149,7 @@ export function saveConfig(
       showLabel: configData.showLabel !== false,
       showProbability: configData.showProbability !== false,
       showHistory: configData.showHistory !== false,
+      showLimit: configData.showLimit !== false,
       maxHistoryCount: validatedMaxHistory,
       createdAt: configs.find((c) => c.id === configData.id)?.createdAt || now,
       updatedAt: now,
@@ -168,6 +171,7 @@ export function saveConfig(
     showLabel: configData.showLabel !== false,
     showProbability: configData.showProbability !== false,
     showHistory: configData.showHistory !== false,
+    showLimit: configData.showLimit !== false,
     maxHistoryCount: validatedMaxHistory,
     createdAt: now,
     updatedAt: now,
@@ -182,7 +186,7 @@ export function saveConfig(
 }
 
 /**
- * 確率設定を複製します（履歴は複製せず0件から開始）
+ * 確率設定を複製します（履歴・当選カウントは複製せず0件から開始）
  */
 export function duplicateConfig(
   id: string,
@@ -202,6 +206,7 @@ export function duplicateConfig(
     showLabel: target.showLabel !== false,
     showProbability: target.showProbability !== false,
     showHistory: target.showHistory !== false,
+    showLimit: target.showLimit !== false,
     maxHistoryCount: target.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT,
     createdAt: now,
     updatedAt: now,
@@ -213,7 +218,7 @@ export function duplicateConfig(
 }
 
 /**
- * 確率設定を削除します（紐づく履歴も削除）
+ * 確率設定を削除します（紐づく履歴および当選カウントも削除）
  */
 export function deleteConfig(id: string): {
   success: boolean;
@@ -229,8 +234,9 @@ export function deleteConfig(id: string): {
   const updatedConfigs = configs.filter((c) => c.id !== id);
   saveStoredConfigs(updatedConfigs);
 
-  // 紐づく履歴も削除
+  // 紐づく履歴および当選カウントも削除
   clearHistory(id);
+  resetHitCounts(id);
 
   let activeId = getActiveConfigId();
   if (activeId === id) {
@@ -242,10 +248,11 @@ export function deleteConfig(id: string): {
 }
 
 /**
- * デフォルト設定に初期化します
+ * デフォルト設定に初期化します（全当選カウントも初期化）
  */
 export function resetToDefaultConfigs(): { configs: LotteryConfig[]; activeId: string } {
   saveStoredConfigs(DEFAULT_CONFIGS);
+  resetAllHitCounts();
   const activeId = DEFAULT_CONFIGS[0].id;
   setActiveConfigId(activeId);
   return { configs: DEFAULT_CONFIGS, activeId };
@@ -335,7 +342,7 @@ export function addHistoryItem(
 }
 
 /**
- * 指定された設定IDの抽選履歴をクリア（リセット）します
+ * 指定された設定IDの抽選履歴をクリア（リセット）し、当選回数もリセットします
  */
 export function clearHistory(configId: string): void {
   if (!configId) return;
@@ -344,17 +351,19 @@ export function clearHistory(configId: string): void {
     delete all[configId];
     saveAllStoredHistories(all);
   }
+  resetHitCounts(configId);
 }
 
 /**
- * 全設定の履歴をクリアします
+ * 全設定の履歴および当選回数をクリアします
  */
 export function clearAllHistory(): void {
   if (!isClient()) return;
   try {
     localStorage.removeItem(LOTTERY_HISTORY_KEY);
+    localStorage.removeItem(LOTTERY_HIT_COUNTS_KEY);
   } catch (error) {
-    console.error("Failed to clear all history:", error);
+    console.error("Failed to clear all history and hit counts:", error);
   }
 }
 
@@ -363,4 +372,97 @@ export function clearAllHistory(): void {
  */
 export function getHistoryCount(configId: string): number {
   return getStoredHistory(configId).length;
+}
+
+/* ==========================================================================
+   当選回数 (Hit Counts) 管理 API
+   ========================================================================== */
+
+/**
+ * 全設定の当選回数マップをLocalStorageから取得
+ */
+function getAllStoredHitCounts(): Record<string, Record<string, number>> {
+  if (!isClient()) return {};
+  try {
+    const raw = localStorage.getItem(LOTTERY_HIT_COUNTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return {};
+  } catch (error) {
+    console.error("Failed to read hit counts from localStorage:", error);
+    return {};
+  }
+}
+
+/**
+ * 全設定の当選回数マップをLocalStorageに保存
+ */
+function saveAllStoredHitCounts(hitCounts: Record<string, Record<string, number>>): void {
+  if (!isClient()) return;
+  try {
+    localStorage.setItem(LOTTERY_HIT_COUNTS_KEY, JSON.stringify(hitCounts));
+  } catch (error) {
+    console.error("Failed to save hit counts to localStorage:", error);
+  }
+}
+
+/**
+ * 指定された設定IDの項目別当選回数マップを取得します
+ */
+export function getStoredHitCounts(configId: string): Record<string, number> {
+  if (!configId) return {};
+  const all = getAllStoredHitCounts();
+  const map = all[configId];
+  return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+}
+
+/**
+ * 指定された設定IDの項目別当選回数マップを保存します
+ */
+export function saveStoredHitCounts(configId: string, counts: Record<string, number>): void {
+  if (!configId) return;
+  const all = getAllStoredHitCounts();
+  all[configId] = counts;
+  saveAllStoredHitCounts(all);
+}
+
+/**
+ * 指定された項目の当選回数を1加算し、最新のカウントマップを保存・返却します
+ */
+export function incrementHitCount(configId: string, itemId: string): Record<string, number> {
+  if (!configId || !itemId) return {};
+  const currentCounts = getStoredHitCounts(configId);
+  const updatedCounts: Record<string, number> = {
+    ...currentCounts,
+    [itemId]: (currentCounts[itemId] || 0) + 1,
+  };
+  saveStoredHitCounts(configId, updatedCounts);
+  return updatedCounts;
+}
+
+/**
+ * 指定された設定IDの当選回数をクリア（0リセット）します
+ */
+export function resetHitCounts(configId: string): void {
+  if (!configId) return;
+  const all = getAllStoredHitCounts();
+  if (all[configId]) {
+    delete all[configId];
+    saveAllStoredHitCounts(all);
+  }
+}
+
+/**
+ * すべての設定の当選回数をクリアします
+ */
+export function resetAllHitCounts(): void {
+  if (!isClient()) return;
+  try {
+    localStorage.removeItem(LOTTERY_HIT_COUNTS_KEY);
+  } catch (error) {
+    console.error("Failed to reset all hit counts:", error);
+  }
 }

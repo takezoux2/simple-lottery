@@ -5,6 +5,7 @@ import {
   LOTTERY_ACTIVE_ID_KEY,
   LOTTERY_CONFIGS_KEY,
   LOTTERY_HISTORY_KEY,
+  LOTTERY_HIT_COUNTS_KEY,
   addHistoryItem,
   clearAllHistory,
   clearHistory,
@@ -15,10 +16,15 @@ import {
   getHistoryCount,
   getStoredConfigs,
   getStoredHistory,
+  getStoredHitCounts,
+  incrementHitCount,
+  resetAllHitCounts,
+  resetHitCounts,
   resetToDefaultConfigs,
   saveConfig,
   saveStoredConfigs,
   saveStoredHistory,
+  saveStoredHitCounts,
   setActiveConfigId,
 } from "../storage";
 
@@ -59,17 +65,22 @@ describe("storage management", () => {
     const newConfigData = {
       name: "新規カスタムくじ",
       items: [
-        { id: "1", label: "松", ratio: 1, color: "#e11d48" },
-        { id: "2", label: "竹", ratio: 2, color: "#059669" },
+        { id: "1", label: "松", ratio: 1, color: "#e11d48", limit: 1 },
+        { id: "2", label: "竹", ratio: 2, color: "#059669", limit: 3 },
         { id: "3", label: "梅", ratio: 3, color: "#4f46e5" },
       ],
+      showLimit: true,
     };
 
     const { savedConfig, configs } = saveConfig(newConfigData, true);
     expect(savedConfig.name).toBe("新規カスタムくじ");
     expect(savedConfig.id).toBeDefined();
     expect(savedConfig.showHistory).toBe(true);
+    expect(savedConfig.showLimit).toBe(true);
     expect(savedConfig.maxHistoryCount).toBe(20);
+    expect(savedConfig.items[0].limit).toBe(1);
+    expect(savedConfig.items[1].limit).toBe(3);
+    expect(savedConfig.items[2].limit).toBeUndefined();
     expect(configs[0].id).toBe(savedConfig.id);
     expect(getActiveConfigId()).toBe(savedConfig.id);
   });
@@ -80,59 +91,70 @@ describe("storage management", () => {
       id: existing.id,
       name: "更新されたスタンダードくじ",
       items: [
-        { id: "1", label: "超当たり", ratio: 5, color: "#d97706" },
+        { id: "1", label: "超当たり", ratio: 5, color: "#d97706", limit: 2 },
         { id: "2", label: "はずれ", ratio: 5, color: "#4b5563" },
       ],
       showHistory: false,
+      showLimit: false,
       maxHistoryCount: 50,
     };
 
     const { savedConfig, configs } = saveConfig(updateData);
     expect(savedConfig.name).toBe("更新されたスタンダードくじ");
     expect(savedConfig.showHistory).toBe(false);
+    expect(savedConfig.showLimit).toBe(false);
     expect(savedConfig.maxHistoryCount).toBe(50);
     const found = configs.find((c) => c.id === existing.id);
     expect(found?.name).toBe("更新されたスタンダードくじ");
     expect(found?.items[0].label).toBe("超当たり");
+    expect(found?.items[0].limit).toBe(2);
     expect(found?.showHistory).toBe(false);
+    expect(found?.showLimit).toBe(false);
     expect(found?.maxHistoryCount).toBe(50);
   });
 
-  it("should duplicate a config with showHistory/maxHistoryCount and empty history", () => {
+  it("should duplicate a config with showLimit/limit and empty history and hit counts", () => {
     const target = DEFAULT_CONFIGS[0];
-    // 対象設定に履歴を追加
+    // 対象設定に履歴と当選回数を追加
     addHistoryItem(target.id, target.items[0], 20);
+    incrementHitCount(target.id, target.items[0].id);
     expect(getStoredHistory(target.id)).toHaveLength(1);
+    expect(getStoredHitCounts(target.id)[target.items[0].id]).toBe(1);
 
     const result = duplicateConfig(target.id);
     expect(result).not.toBeNull();
     expect(result?.duplicated.name).toBe(`${target.name} (コピー)`);
     expect(result?.duplicated.id).not.toBe(target.id);
     expect(result?.duplicated.showHistory).toBe(true);
+    expect(result?.duplicated.showLimit).toBe(true);
     expect(result?.duplicated.maxHistoryCount).toBe(20);
     expect(result?.configs.length).toBe(DEFAULT_CONFIGS.length + 1);
 
-    // 複製先の履歴は0件であること
+    // 複製先の履歴および当選回数は0件であること
     if (result) {
       expect(getStoredHistory(result.duplicated.id)).toHaveLength(0);
+      expect(getStoredHitCounts(result.duplicated.id)).toEqual({});
     }
   });
 
-  it("should delete a config, clean up history, and update activeId if active one is deleted", () => {
+  it("should delete a config, clean up history and hit counts, and update activeId if active one is deleted", () => {
     const configs = getStoredConfigs();
     const activeId = configs[0].id;
     setActiveConfigId(activeId);
 
-    // 履歴を追加
+    // 履歴と当選回数を追加
     addHistoryItem(activeId, configs[0].items[0], 20);
+    incrementHitCount(activeId, configs[0].items[0].id);
     expect(getStoredHistory(activeId)).toHaveLength(1);
+    expect(getStoredHitCounts(activeId)[configs[0].items[0].id]).toBe(1);
 
     const deleteResult = deleteConfig(activeId);
     expect(deleteResult.success).toBe(true);
     expect(deleteResult.activeId).not.toBe(activeId);
     expect(deleteResult.configs.some((c) => c.id === activeId)).toBe(false);
-    // 削除された設定の履歴も削除されていること
+    // 削除された設定の履歴および当選回数も削除されていること
     expect(getStoredHistory(activeId)).toHaveLength(0);
+    expect(getStoredHitCounts(activeId)).toEqual({});
   });
 
   it("should prevent deleting the last remaining config", () => {
@@ -142,7 +164,8 @@ describe("storage management", () => {
     expect(deleteResult.configs).toHaveLength(1);
   });
 
-  it("should reset to default configs", () => {
+  it("should reset to default configs and reset all hit counts", () => {
+    incrementHitCount(DEFAULT_CONFIGS[0].id, "item-1");
     saveStoredConfigs([]);
     const reset = resetToDefaultConfigs();
     expect(reset.configs).toHaveLength(DEFAULT_CONFIGS.length);
@@ -150,19 +173,22 @@ describe("storage management", () => {
     expect(reset.configs[0].showLabel).toBe(true);
     expect(reset.configs[0].showProbability).toBe(true);
     expect(reset.configs[0].showHistory).toBe(true);
+    expect(reset.configs[0].showLimit).toBe(true);
     expect(reset.configs[0].maxHistoryCount).toBe(20);
+    expect(getStoredHitCounts(DEFAULT_CONFIGS[0].id)).toEqual({});
   });
 
-  it("should save and duplicate custom showLabel, showProbability, showHistory, maxHistoryCount flags", () => {
+  it("should save and duplicate custom showLabel, showProbability, showHistory, showLimit, maxHistoryCount flags", () => {
     const newConfigData = {
       name: "ブラインドくじ",
       items: [
-        { id: "1", label: "シークレットA", ratio: 1, color: "#e11d48" },
+        { id: "1", label: "シークレットA", ratio: 1, color: "#e11d48", limit: 5 },
         { id: "2", label: "シークレットB", ratio: 2, color: "#059669" },
       ],
       showLabel: false,
       showProbability: false,
       showHistory: false,
+      showLimit: false,
       maxHistoryCount: 15,
     };
 
@@ -170,19 +196,24 @@ describe("storage management", () => {
     expect(savedConfig.showLabel).toBe(false);
     expect(savedConfig.showProbability).toBe(false);
     expect(savedConfig.showHistory).toBe(false);
+    expect(savedConfig.showLimit).toBe(false);
     expect(savedConfig.maxHistoryCount).toBe(15);
+    expect(savedConfig.items[0].limit).toBe(5);
     expect(configs[0].showLabel).toBe(false);
     expect(configs[0].showProbability).toBe(false);
     expect(configs[0].showHistory).toBe(false);
+    expect(configs[0].showLimit).toBe(false);
     expect(configs[0].maxHistoryCount).toBe(15);
 
-    // 複製時にフラグが引き継がれること
+    // 複製時にフラグとlimitが引き継がれること
     const dupResult = duplicateConfig(savedConfig.id);
     expect(dupResult).not.toBeNull();
     expect(dupResult?.duplicated.showLabel).toBe(false);
     expect(dupResult?.duplicated.showProbability).toBe(false);
     expect(dupResult?.duplicated.showHistory).toBe(false);
+    expect(dupResult?.duplicated.showLimit).toBe(false);
     expect(dupResult?.duplicated.maxHistoryCount).toBe(15);
+    expect(dupResult?.duplicated.items[0].limit).toBe(5);
 
     // 更新時にフラグを変更できること
     const updateResult = saveConfig({
@@ -192,11 +223,13 @@ describe("storage management", () => {
       showLabel: true,
       showProbability: false,
       showHistory: true,
+      showLimit: true,
       maxHistoryCount: 50,
     });
     expect(updateResult.savedConfig.showLabel).toBe(true);
     expect(updateResult.savedConfig.showProbability).toBe(false);
     expect(updateResult.savedConfig.showHistory).toBe(true);
+    expect(updateResult.savedConfig.showLimit).toBe(true);
     expect(updateResult.savedConfig.maxHistoryCount).toBe(50);
   });
 
@@ -234,25 +267,70 @@ describe("storage management", () => {
       expect(getHistoryCount(testConfigId)).toBe(2);
     });
 
-    it("should clear history for a specific configId", () => {
+    it("should clear history and reset hit counts for a specific configId", () => {
       addHistoryItem(testConfigId, testItemA, 10);
+      incrementHitCount(testConfigId, "item-a");
       addHistoryItem("other-config", testItemB, 10);
+      incrementHitCount("other-config", "item-b");
 
       expect(getStoredHistory(testConfigId)).toHaveLength(1);
+      expect(getStoredHitCounts(testConfigId)["item-a"]).toBe(1);
       expect(getStoredHistory("other-config")).toHaveLength(1);
+      expect(getStoredHitCounts("other-config")["item-b"]).toBe(1);
 
       clearHistory(testConfigId);
       expect(getStoredHistory(testConfigId)).toHaveLength(0);
+      expect(getStoredHitCounts(testConfigId)).toEqual({});
       expect(getStoredHistory("other-config")).toHaveLength(1);
+      expect(getStoredHitCounts("other-config")["item-b"]).toBe(1);
     });
 
-    it("should clear all history", () => {
+    it("should clear all history and all hit counts", () => {
       addHistoryItem(testConfigId, testItemA, 10);
+      incrementHitCount(testConfigId, "item-a");
       addHistoryItem("other-config", testItemB, 10);
+      incrementHitCount("other-config", "item-b");
 
       clearAllHistory();
       expect(getStoredHistory(testConfigId)).toHaveLength(0);
+      expect(getStoredHitCounts(testConfigId)).toEqual({});
       expect(getStoredHistory("other-config")).toHaveLength(0);
+      expect(getStoredHitCounts("other-config")).toEqual({});
+    });
+  });
+
+  describe("hit counts management API", () => {
+    const configId = "test-config-hits";
+
+    it("should increment hit count correctly", () => {
+      expect(getStoredHitCounts(configId)).toEqual({});
+      const res1 = incrementHitCount(configId, "item-1");
+      expect(res1["item-1"]).toBe(1);
+      const res2 = incrementHitCount(configId, "item-1");
+      expect(res2["item-1"]).toBe(2);
+      incrementHitCount(configId, "item-2");
+
+      const counts = getStoredHitCounts(configId);
+      expect(counts["item-1"]).toBe(2);
+      expect(counts["item-2"]).toBe(1);
+    });
+
+    it("should reset hit counts for a specific config", () => {
+      incrementHitCount(configId, "item-1");
+      incrementHitCount("other-cfg", "item-2");
+
+      resetHitCounts(configId);
+      expect(getStoredHitCounts(configId)).toEqual({});
+      expect(getStoredHitCounts("other-cfg")["item-2"]).toBe(1);
+    });
+
+    it("should reset all hit counts", () => {
+      incrementHitCount(configId, "item-1");
+      incrementHitCount("other-cfg", "item-2");
+
+      resetAllHitCounts();
+      expect(getStoredHitCounts(configId)).toEqual({});
+      expect(getStoredHitCounts("other-cfg")).toEqual({});
     });
   });
 });

@@ -18,6 +18,7 @@ import {
   getActiveConfigId,
   getHistoryCount,
   getStoredConfigs,
+  getStoredHitCounts,
   resetToDefaultConfigs,
   saveConfig,
   setActiveConfigId,
@@ -32,6 +33,7 @@ interface FormItemState {
   label: string;
   ratio: number;
   color: string;
+  limit?: number;
 }
 
 export default function SettingsPage() {
@@ -47,6 +49,7 @@ export default function SettingsPage() {
   const [formShowLabel, setFormShowLabel] = useState(true);
   const [formShowProbability, setFormShowProbability] = useState(true);
   const [formShowHistory, setFormShowHistory] = useState(true);
+  const [formShowLimit, setFormShowLimit] = useState(true);
   const [formMaxHistoryCount, setFormMaxHistoryCount] = useState(DEFAULT_MAX_HISTORY_COUNT);
   const [formError, setFormError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
@@ -80,12 +83,13 @@ export default function SettingsPage() {
     setEditingId(null);
     setFormName("新しいくじ設定");
     setFormItems([
-      { id: generateId(), label: "項目1", ratio: 1, color: PRESET_COLORS[0] },
-      { id: generateId(), label: "項目2", ratio: 1, color: PRESET_COLORS[1] },
+      { id: generateId(), label: "項目1", ratio: 1, color: PRESET_COLORS[0], limit: undefined },
+      { id: generateId(), label: "項目2", ratio: 1, color: PRESET_COLORS[1], limit: undefined },
     ]);
     setFormShowLabel(true);
     setFormShowProbability(true);
     setFormShowHistory(true);
+    setFormShowLimit(true);
     setFormMaxHistoryCount(DEFAULT_MAX_HISTORY_COUNT);
     setFormError(null);
     setViewMode("create");
@@ -101,11 +105,13 @@ export default function SettingsPage() {
         label: item.label,
         ratio: Math.max(1, Math.round(item.ratio || 1)),
         color: item.color || PRESET_COLORS[index % PRESET_COLORS.length],
+        limit: item.limit && item.limit > 0 ? item.limit : undefined,
       })),
     );
     setFormShowLabel(config.showLabel !== false);
     setFormShowProbability(config.showProbability !== false);
     setFormShowHistory(config.showHistory !== false);
+    setFormShowLimit(config.showLimit !== false);
     setFormMaxHistoryCount(config.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT);
     setFormError(null);
     setViewMode("edit");
@@ -113,12 +119,12 @@ export default function SettingsPage() {
 
   // 履歴リセット
   const handleResetConfigHistory = (config: { id: string; name: string }) => {
-    if (!window.confirm(`「${config.name}」の抽選履歴をリセットしてもよろしいですか？`)) {
+    if (!window.confirm(`「${config.name}」の抽選履歴・当選数をリセットしてもよろしいですか？`)) {
       return;
     }
     clearHistory(config.id);
     setHistoryVersion((v) => v + 1);
-    showNotification(`「${config.name}」の抽選履歴をリセットしました`);
+    showNotification(`「${config.name}」の抽選履歴・当選数をリセットしました`);
   };
 
   // アクティブ設定の切り替え
@@ -180,6 +186,7 @@ export default function SettingsPage() {
         label: `項目${prev.length + 1}`,
         ratio: 1,
         color: nextColor,
+        limit: undefined,
       },
     ]);
   };
@@ -211,6 +218,24 @@ export default function SettingsPage() {
     setFormItems((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], ratio: safeVal };
+      return next;
+    });
+  };
+
+  // フォーム内: 上限更新 (空欄または0は無制限、1以上で設定)
+  const handleItemLimitChange = (index: number, val: string) => {
+    setFormItems((prev) => {
+      const next = [...prev];
+      const trimmed = val.trim();
+      if (trimmed === "" || trimmed === "0") {
+        next[index] = { ...next[index], limit: undefined };
+      } else {
+        const parsed = Number.parseInt(trimmed, 10);
+        next[index] = {
+          ...next[index],
+          limit: !Number.isNaN(parsed) && parsed > 0 ? parsed : undefined,
+        };
+      }
       return next;
     });
   };
@@ -260,6 +285,13 @@ export default function SettingsPage() {
         setFormError(`項目 ${i + 1} の比重は1以上の整数にしてください`);
         return;
       }
+      if (
+        formItems[i].limit !== undefined &&
+        (Number.isNaN(formItems[i].limit) || (formItems[i].limit as number) <= 0)
+      ) {
+        setFormError(`項目 ${i + 1} の上限は1以上の整数にしてください`);
+        return;
+      }
     }
 
     const cleanItems: LotteryItem[] = formItems.map((item) => ({
@@ -267,6 +299,7 @@ export default function SettingsPage() {
       label: item.label.trim(),
       ratio: Math.max(1, Math.floor(item.ratio)),
       color: item.color,
+      limit: item.limit && item.limit > 0 ? Math.floor(item.limit) : undefined,
     }));
 
     const safeMaxHistory = Math.min(
@@ -282,6 +315,7 @@ export default function SettingsPage() {
         showLabel: formShowLabel,
         showProbability: formShowProbability,
         showHistory: formShowHistory,
+        showLimit: formShowLimit,
         maxHistoryCount: safeMaxHistory,
       },
       shouldSetActive,
@@ -446,6 +480,19 @@ export default function SettingsPage() {
                               {` (最大${config.maxHistoryCount ?? DEFAULT_MAX_HISTORY_COUNT}件 / 保存${getHistoryCount(config.id)}件)`}
                             </span>
                           </span>
+                          <span>•</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            上限:
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                config.showLimit !== false
+                                  ? "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                  : "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"
+                              }`}
+                            >
+                              {config.showLimit !== false ? "表示" : "非表示"}
+                            </span>
+                          </span>
                         </div>
                       </div>
 
@@ -484,10 +531,20 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap gap-2 mb-4">
                       {config.items.map((item, idx) => {
                         const pct = getPercentage(item.ratio, config.items);
+                        const hitCounts = getStoredHitCounts(config.id);
+                        const hits = hitCounts[item.id] || 0;
+                        const isLimited =
+                          item.limit !== undefined && item.limit !== null && item.limit > 0;
+                        const isReached = isLimited && hits >= (item.limit as number);
+
                         return (
                           <div
                             key={item.id || idx}
-                            className="flex items-center gap-1.5 text-xs py-1 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800"
+                            className={`flex items-center gap-1.5 text-xs py-1 px-2.5 rounded-lg border transition-colors ${
+                              isReached
+                                ? "bg-slate-100/60 dark:bg-slate-800/30 border-rose-200 dark:border-rose-900/50 text-slate-400 opacity-70"
+                                : "bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-800"
+                            }`}
                           >
                             <span
                               className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -502,6 +559,17 @@ export default function SettingsPage() {
                             <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
                               比重{item.ratio} ({pct}%)
                             </span>
+                            {isLimited && (
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
+                                  isReached
+                                    ? "bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400"
+                                    : "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400"
+                                }`}
+                              >
+                                {isReached ? "上限到達" : `上限: ${hits}/${item.limit}`}
+                              </span>
+                            )}
                           </div>
                         );
                       })}
@@ -673,8 +741,8 @@ export default function SettingsPage() {
                 <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   表示・履歴オプション
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={formShowLabel}
@@ -685,7 +753,7 @@ export default function SettingsPage() {
                       凡例にラベルを表示
                     </span>
                   </label>
-                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={formShowProbability}
@@ -696,7 +764,18 @@ export default function SettingsPage() {
                       凡例に確率を表示
                     </span>
                   </label>
-                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formShowLimit}
+                      onChange={(e) => setFormShowLimit(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-900 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      凡例に上限を表示
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={formShowHistory}
@@ -792,7 +871,7 @@ export default function SettingsPage() {
                           d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                         />
                       </svg>
-                      <span>この設定の履歴をリセット ({getHistoryCount(editingId)}件)</span>
+                      <span>この設定の履歴・当選数をリセット ({getHistoryCount(editingId)}件)</span>
                     </button>
                   )}
                 </div>
@@ -802,7 +881,7 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    項目と比重（ウェイト）の設定 <span className="text-rose-500">*</span>
+                    項目と比重・上限の設定 <span className="text-rose-500">*</span>
                   </div>
                   <button
                     type="button"
@@ -876,43 +955,61 @@ export default function SettingsPage() {
                             value={item.label}
                             onChange={(e) => handleItemLabelChange(index, e.target.value)}
                             placeholder={`項目名 ${index + 1}`}
-                            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="flex-1 min-w-[100px] px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
 
-                        {/* Right: Ratio Stepper + Calculated Percentage + Delete */}
-                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                        {/* Right: Ratio Stepper + Limit Input + Calculated Percentage + Delete */}
+                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 flex-wrap">
                           {/* Ratio Stepper */}
-                          <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
-                            <button
-                              type="button"
-                              onClick={() => handleRatioStep(index, -1)}
-                              disabled={item.ratio <= 1}
-                              className="px-2.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-sm"
-                            >
-                              -
-                            </button>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 shrink-0">比重:</span>
+                            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => handleRatioStep(index, -1)}
+                                disabled={item.ratio <= 1}
+                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={item.ratio}
+                                onChange={(e) =>
+                                  handleItemRatioChange(index, Number.parseInt(e.target.value) || 1)
+                                }
+                                className="w-10 text-center text-xs font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRatioStep(index, 1)}
+                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Limit Input */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 shrink-0">上限:</span>
                             <input
                               type="number"
                               min="1"
                               step="1"
-                              value={item.ratio}
-                              onChange={(e) =>
-                                handleItemRatioChange(index, Number.parseInt(e.target.value) || 1)
-                              }
-                              className="w-12 text-center text-sm font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              placeholder="無制限"
+                              value={item.limit ?? ""}
+                              onChange={(e) => handleItemLimitChange(index, e.target.value)}
+                              className="w-16 text-center text-xs font-semibold px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-slate-400 placeholder:font-normal"
+                              title="空欄で無制限、1以上の整数で当選上限数を指定"
                             />
-                            <button
-                              type="button"
-                              onClick={() => handleRatioStep(index, 1)}
-                              className="px-2.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm"
-                            >
-                              +
-                            </button>
                           </div>
 
                           {/* Real-time Percentage Badge */}
-                          <div className="w-16 text-right font-mono font-bold text-sm text-indigo-600 dark:text-indigo-400">
+                          <div className="w-14 text-right font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400">
                             {pct}%
                           </div>
 

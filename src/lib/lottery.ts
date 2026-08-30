@@ -3,6 +3,7 @@ export interface LotteryItem {
   label: string;
   ratio: number;
   color?: string;
+  limit?: number; // 当選上限数 (1以上の正の整数。undefined または 0 の場合は無制限)
 }
 
 export interface LotteryConfig {
@@ -12,6 +13,7 @@ export interface LotteryConfig {
   showLabel?: boolean;
   showProbability?: boolean;
   showHistory?: boolean;
+  showLimit?: boolean;
   maxHistoryCount?: number;
   createdAt: number;
   updatedAt: number;
@@ -41,6 +43,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     showLabel: true,
     showProbability: true,
     showHistory: true,
+    showLimit: true,
     maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
@@ -58,6 +61,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     showLabel: true,
     showProbability: true,
     showHistory: true,
+    showLimit: true,
     maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
@@ -76,6 +80,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
     showLabel: true,
     showProbability: true,
     showHistory: true,
+    showLimit: true,
     maxHistoryCount: 20,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
@@ -83,6 +88,34 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
 ];
 
 export const DEFAULT_PROBABILITY_TABLE: LotteryItem[] = DEFAULT_CONFIGS[0].items;
+
+/**
+ * 各項目の当選数と上限を考慮して、上限に達していない有効な抽選対象項目を返します
+ */
+export function getAvailableLotteryItems(
+  items: LotteryItem[],
+  hitCounts: Record<string, number> = {},
+): LotteryItem[] {
+  if (!items || items.length === 0) return [];
+  return items.filter((item) => {
+    if (item.limit === undefined || item.limit === null || item.limit <= 0) {
+      return true;
+    }
+    const hits = hitCounts[item.id] || 0;
+    return hits < item.limit;
+  });
+}
+
+/**
+ * すべての項目が上限に達しているかどうかを判定します
+ */
+export function isAllLimitsReached(
+  items: LotteryItem[],
+  hitCounts: Record<string, number> = {},
+): boolean {
+  if (!items || items.length === 0) return true;
+  return getAvailableLotteryItems(items, hitCounts).length === 0;
+}
 
 /**
  * 確率テーブルに基づいてくじ引き結果を1件選出します

@@ -5,7 +5,9 @@ import {
   type LotteryConfig,
   type LotteryItem,
   chooseLottery,
+  getAvailableLotteryItems,
   getPercentage,
+  isAllLimitsReached,
 } from "@/lib/lottery";
 import {
   type DrawHistoryItem,
@@ -14,10 +16,12 @@ import {
   getActiveConfig,
   getStoredConfigs,
   getStoredHistory,
+  getStoredHitCounts,
+  incrementHitCount,
   setActiveConfigId,
 } from "@/lib/storage";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function Home() {
   const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
@@ -25,14 +29,16 @@ export default function Home() {
   const [currentResult, setCurrentResult] = useState<LotteryItem | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<DrawHistoryItem[]>([]);
+  const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
 
-  // LocalStorageから設定と履歴をロード
+  // LocalStorageから設定・履歴・当選数をロード
   useEffect(() => {
     const loadedConfigs = getStoredConfigs();
     const currentActive = getActiveConfig();
     setConfigs(loadedConfigs);
     setActiveConfig(currentActive);
     setHistory(getStoredHistory(currentActive.id));
+    setHitCounts(getStoredHitCounts(currentActive.id));
   }, []);
 
   // 設定の切り替え
@@ -43,40 +49,55 @@ export default function Home() {
       setActiveConfig(target);
       setCurrentResult(null);
       setHistory(getStoredHistory(target.id));
+      setHitCounts(getStoredHitCounts(target.id));
     }
   };
 
+  // 有効な抽選対象項目（上限未到達の項目）
+  const availableItems = useMemo(() => {
+    return getAvailableLotteryItems(activeConfig.items, hitCounts);
+  }, [activeConfig.items, hitCounts]);
+
+  const allLimitsReached = useMemo(() => {
+    return isAllLimitsReached(activeConfig.items, hitCounts);
+  }, [activeConfig.items, hitCounts]);
+
   const handleDraw = useCallback(() => {
-    if (isDrawing || !activeConfig.items || activeConfig.items.length === 0) return;
+    const currentAvailable = getAvailableLotteryItems(activeConfig.items, hitCounts);
+    if (isDrawing || currentAvailable.length === 0) return;
     setIsDrawing(true);
 
-    const items = activeConfig.items;
     let count = 0;
     const interval = setInterval(() => {
-      const tempIndex = Math.floor(Math.random() * items.length);
-      setCurrentResult(items[tempIndex]);
+      const tempIndex = Math.floor(Math.random() * currentAvailable.length);
+      setCurrentResult(currentAvailable[tempIndex]);
       count++;
       if (count > 8) {
         clearInterval(interval);
-        const finalResult = chooseLottery(items);
+        const finalResult = chooseLottery(currentAvailable);
         setCurrentResult(finalResult);
         const updatedHistory = addHistoryItem(
           activeConfig.id,
           finalResult,
           activeConfig.maxHistoryCount ?? 20,
         );
+        const updatedHitCounts = incrementHitCount(activeConfig.id, finalResult.id);
+        setHitCounts(updatedHitCounts);
         setHistory(updatedHistory);
         setIsDrawing(false);
       }
     }, 60);
-  }, [activeConfig, isDrawing]);
+  }, [activeConfig, hitCounts, isDrawing]);
 
   const handleResetHistory = () => {
-    if (!window.confirm(`「${activeConfig.name}」の抽選履歴をリセットしてもよろしいですか？`)) {
+    if (
+      !window.confirm(`「${activeConfig.name}」の抽選履歴・当選数をリセットしてもよろしいですか？`)
+    ) {
       return;
     }
     clearHistory(activeConfig.id);
     setHistory([]);
+    setHitCounts({});
     setCurrentResult(null);
   };
 
@@ -166,7 +187,9 @@ export default function Home() {
               {activeConfig.name}
             </span>
             <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              ボタンを押してくじを引いてください
+              {allLimitsReached
+                ? "すべての項目が上限に達しました"
+                : "ボタンを押してくじを引いてください"}
             </div>
           </div>
 
@@ -199,15 +222,36 @@ export default function Home() {
             )}
           </div>
 
-          {/* Action Button */}
-          <button
-            type="button"
-            onClick={handleDraw}
-            disabled={isDrawing}
-            className="w-full max-w-xs py-4 px-8 rounded-2xl font-bold text-lg text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-md shadow-indigo-500/20 transition-all duration-150"
-          >
-            {isDrawing ? "抽選中..." : "くじを引く"}
-          </button>
+          {/* Action Button & All Limits Reached Alert */}
+          <div className="w-full max-w-xs flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDraw}
+              disabled={isDrawing || allLimitsReached}
+              className="w-full py-4 px-8 rounded-2xl font-bold text-lg text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-md shadow-indigo-500/20 transition-all duration-150"
+            >
+              {allLimitsReached
+                ? "すべての上限に達しました"
+                : isDrawing
+                  ? "抽選中..."
+                  : "くじを引く"}
+            </button>
+
+            {allLimitsReached && (
+              <div className="w-full p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-center flex flex-col items-center gap-2">
+                <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                  すべてのくじが上限に達しました
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetHistory}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white shadow-sm transition-all"
+                >
+                  履歴・当選数をリセットして再開
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Probability Table Card */}
@@ -227,11 +271,17 @@ export default function Home() {
               </Link>
             </div>
 
-            {/* Mini preview bar (確率表示がONの場合のみ表示) */}
+            {/* Mini preview bar (確率表示がONの場合のみ表示。有効項目のみで分布表示) */}
             {activeConfig.showProbability !== false && (
               <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-3">
                 {activeConfig.items.map((item, idx) => {
-                  const pct = getPercentage(item.ratio, activeConfig.items);
+                  const isLimited =
+                    item.limit !== undefined && item.limit !== null && item.limit > 0;
+                  const currentHits = hitCounts[item.id] || 0;
+                  const isReached = isLimited && currentHits >= (item.limit as number);
+                  const pct = isReached ? 0 : getPercentage(item.ratio, availableItems);
+                  if (pct <= 0) return null;
+
                   return (
                     <div
                       key={item.id || idx}
@@ -239,7 +289,7 @@ export default function Home() {
                         width: `${pct}%`,
                         backgroundColor: item.color,
                       }}
-                      className="h-full"
+                      className="h-full transition-all"
                     />
                   );
                 })}
@@ -247,32 +297,62 @@ export default function Home() {
             )}
 
             <div className="flex flex-col gap-2">
-              {activeConfig.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/50"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: item.color || "#6b7280" }}
-                    />
-                    {activeConfig.showLabel !== false && (
-                      <span className="font-medium">{item.label}</span>
+              {activeConfig.items.map((item) => {
+                const isLimited = item.limit !== undefined && item.limit !== null && item.limit > 0;
+                const currentHits = hitCounts[item.id] || 0;
+                const isReached = isLimited && currentHits >= (item.limit as number);
+                const pct = isReached ? 0 : getPercentage(item.ratio, availableItems);
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex items-center justify-between text-sm py-1.5 px-3 rounded-lg transition-colors ${
+                      isReached
+                        ? "bg-slate-100/60 dark:bg-slate-800/30 opacity-60 line-through text-slate-400"
+                        : "bg-slate-50 dark:bg-slate-800/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: item.color || "#6b7280" }}
+                      />
+                      {activeConfig.showLabel !== false && (
+                        <span className="font-medium">{item.label}</span>
+                      )}
+                      {/* 上限到達バッジ */}
+                      {isReached && (
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 no-underline inline-block">
+                          上限到達
+                        </span>
+                      )}
+                      {/* 上限表示 (showLimit !== false かつ 未到達の場合) */}
+                      {!isReached && isLimited && activeConfig.showLimit !== false && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
+                          (当選 {currentHits}/{item.limit}回)
+                        </span>
+                      )}
+                    </div>
+
+                    {activeConfig.showProbability !== false && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
+                          比重: {item.ratio}
+                        </span>
+                        <span
+                          className={`font-bold font-mono no-underline ${
+                            isReached
+                              ? "text-slate-400 dark:text-slate-600"
+                              : "text-slate-700 dark:text-slate-300"
+                          }`}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
                     )}
                   </div>
-                  {activeConfig.showProbability !== false && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
-                        比重: {item.ratio}
-                      </span>
-                      <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
-                        {getPercentage(item.ratio, activeConfig.items)}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -289,7 +369,7 @@ export default function Home() {
                 onClick={handleResetHistory}
                 className="text-xs text-slate-500 hover:text-rose-500 transition-colors"
               >
-                履歴クリア
+                履歴・当選数クリア
               </button>
             </div>
 
@@ -307,10 +387,19 @@ export default function Home() {
                     (h) => h.result.id === item.id || h.result.label === item.label,
                   ).length;
                   const rate = Math.round((count / history.length) * 100);
+                  const isLimited =
+                    item.limit !== undefined && item.limit !== null && item.limit > 0;
+                  const currentHits = hitCounts[item.id] || 0;
+                  const isReached = isLimited && currentHits >= (item.limit as number);
+
                   return (
                     <div
                       key={item.id}
-                      className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl flex flex-col items-center"
+                      className={`p-2 rounded-xl flex flex-col items-center transition-colors ${
+                        isReached
+                          ? "bg-slate-100/70 dark:bg-slate-800/30 opacity-70"
+                          : "bg-slate-50 dark:bg-slate-800/50"
+                      }`}
                     >
                       <div className="flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 truncate max-w-full">
                         <span
@@ -325,6 +414,17 @@ export default function Home() {
                           ({rate}%)
                         </span>
                       </div>
+                      {isLimited && activeConfig.showLimit !== false && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {isReached ? (
+                            <span className="text-rose-500 font-bold">上限到達</span>
+                          ) : (
+                            <span>
+                              当選 {currentHits}/{item.limit}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
