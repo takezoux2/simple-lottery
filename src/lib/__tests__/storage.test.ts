@@ -114,5 +114,42 @@ describe("storage management", () => {
     const reset = resetToDefaultConfigs();
     expect(reset.configs).toHaveLength(DEFAULT_CONFIGS.length);
     expect(reset.activeId).toBe(DEFAULT_CONFIGS[0].id);
+    expect(reset.configs[0].showLabel).toBe(true);
+    expect(reset.configs[0].showProbability).toBe(true);
+  });
+
+  it("should save and duplicate custom showLabel and showProbability flags", () => {
+    const newConfigData = {
+      name: "ブラインドくじ",
+      items: [
+        { id: "1", label: "シークレットA", ratio: 1, color: "#e11d48" },
+        { id: "2", label: "シークレットB", ratio: 2, color: "#059669" },
+      ],
+      showLabel: false,
+      showProbability: false,
+    };
+
+    const { savedConfig, configs } = saveConfig(newConfigData, true);
+    expect(savedConfig.showLabel).toBe(false);
+    expect(savedConfig.showProbability).toBe(false);
+    expect(configs[0].showLabel).toBe(false);
+    expect(configs[0].showProbability).toBe(false);
+
+    // 複製時にフラグが引き継がれること
+    const dupResult = duplicateConfig(savedConfig.id);
+    expect(dupResult).not.toBeNull();
+    expect(dupResult?.duplicated.showLabel).toBe(false);
+    expect(dupResult?.duplicated.showProbability).toBe(false);
+
+    // 更新時にフラグを変更できること
+    const updateResult = saveConfig({
+      id: savedConfig.id,
+      name: "一部開示くじ",
+      items: savedConfig.items,
+      showLabel: true,
+      showProbability: false,
+    });
+    expect(updateResult.savedConfig.showLabel).toBe(true);
+    expect(updateResult.savedConfig.showProbability).toBe(false);
   });
 });

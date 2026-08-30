@@ -9,6 +9,8 @@ export interface LotteryConfig {
   id: string;
   name: string;
   items: LotteryItem[];
+  showLabel?: boolean;
+  showProbability?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -34,6 +36,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-1", label: "当たり", ratio: 3, color: "#059669" },
       { id: "item-2", label: "はずれ", ratio: 7, color: "#4b5563" },
     ],
+    showLabel: true,
+    showProbability: true,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },
@@ -47,6 +51,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-4", label: "吉", ratio: 3, color: "#059669" },
       { id: "item-5", label: "凶", ratio: 1, color: "#4b5563" },
     ],
+    showLabel: true,
+    showProbability: true,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },
@@ -61,6 +67,8 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-5", label: "5", ratio: 1, color: "#ea580c" },
       { id: "item-6", label: "6", ratio: 1, color: "#e11d48" },
     ],
+    showLabel: true,
+    showProbability: true,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   },

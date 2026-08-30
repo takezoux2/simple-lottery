@@ -101,7 +101,13 @@ export function getActiveConfig(): LotteryConfig {
  * 確率設定を新規作成または更新保存します
  */
 export function saveConfig(
-  configData: { id?: string; name: string; items: LotteryItem[] },
+  configData: {
+    id?: string;
+    name: string;
+    items: LotteryItem[];
+    showLabel?: boolean;
+    showProbability?: boolean;
+  },
   setActive = false,
 ): { savedConfig: LotteryConfig; configs: LotteryConfig[] } {
   const configs = getStoredConfigs();
@@ -115,6 +121,8 @@ export function saveConfig(
       id: configData.id,
       name: configData.name.trim() || "無題の設定",
       items: configData.items,
+      showLabel: configData.showLabel !== false,
+      showProbability: configData.showProbability !== false,
       createdAt: configs.find((c) => c.id === configData.id)?.createdAt || now,
       updatedAt: now,
     };
@@ -132,6 +140,8 @@ export function saveConfig(
     id: configData.id || generateId(),
     name: configData.name.trim() || "新規設定",
     items: configData.items,
+    showLabel: configData.showLabel !== false,
+    showProbability: configData.showProbability !== false,
     createdAt: now,
     updatedAt: now,
   };
@@ -162,6 +172,8 @@ export function duplicateConfig(
       ...item,
       id: generateId(),
     })),
+    showLabel: target.showLabel !== false,
+    showProbability: target.showProbability !== false,
     createdAt: now,
     updatedAt: now,
   };

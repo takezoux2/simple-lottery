@@ -38,6 +38,8 @@ export default function SettingsPage() {
   // フォーム状態
   const [formName, setFormName] = useState("");
   const [formItems, setFormItems] = useState<FormItemState[]>([]);
+  const [formShowLabel, setFormShowLabel] = useState(true);
+  const [formShowProbability, setFormShowProbability] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [activeColorPickerIndex, setActiveColorPickerIndex] = useState<number | null>(null);
@@ -73,6 +75,8 @@ export default function SettingsPage() {
       { id: generateId(), label: "項目1", ratio: 1, color: PRESET_COLORS[0] },
       { id: generateId(), label: "項目2", ratio: 1, color: PRESET_COLORS[1] },
     ]);
+    setFormShowLabel(true);
+    setFormShowProbability(true);
     setFormError(null);
     setViewMode("create");
   };
@@ -89,6 +93,8 @@ export default function SettingsPage() {
         color: item.color || PRESET_COLORS[index % PRESET_COLORS.length],
       })),
     );
+    setFormShowLabel(config.showLabel !== false);
+    setFormShowProbability(config.showProbability !== false);
     setFormError(null);
     setViewMode("edit");
   };
@@ -246,6 +252,8 @@ export default function SettingsPage() {
         id: editingId || undefined,
         name: trimmedName,
         items: cleanItems,
+        showLabel: formShowLabel,
+        showProbability: formShowProbability,
       },
       shouldSetActive,
     );
@@ -369,9 +377,33 @@ export default function SettingsPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                          項目数: {config.items.length}件 / 比重合計: {totalCfgRatio}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 dark:text-slate-500 mt-1">
+                          <span>
+                            項目数: {config.items.length}件 / 比重合計: {totalCfgRatio}
+                          </span>
+                          <span>•</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            凡例:
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                config.showLabel !== false
+                                  ? "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                  : "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"
+                              }`}
+                            >
+                              {config.showLabel !== false ? "ラベル表示" : "ラベル非表示"}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                config.showProbability !== false
+                                  ? "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                  : "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"
+                              }`}
+                            >
+                              {config.showProbability !== false ? "確率表示" : "確率非表示"}
+                            </span>
+                          </span>
+                        </div>
                       </div>
 
                       {/* Top Action */}
@@ -566,6 +598,37 @@ export default function SettingsPage() {
                   placeholder="例: ランチ決めくじ、3択ルーレット"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              {/* Display Options Section */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col gap-3">
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  くじ引き画面の凡例表示設定
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formShowLabel}
+                      onChange={(e) => setFormShowLabel(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-900 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      凡例にラベルを表示
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formShowProbability}
+                      onChange={(e) => setFormShowProbability(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-900 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      凡例に確率を表示
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* Items Section */}

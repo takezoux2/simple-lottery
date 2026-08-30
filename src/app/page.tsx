@@ -208,61 +208,71 @@ export default function Home() {
         </div>
 
         {/* Probability Table Card */}
-        <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              確率内訳 ({activeConfig.name})
-            </h2>
-            <Link
-              href="/settings"
-              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              設定を編集
-            </Link>
-          </div>
-
-          {/* Mini preview bar */}
-          <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-3">
-            {activeConfig.items.map((item, idx) => {
-              const pct = getPercentage(item.ratio, activeConfig.items);
-              return (
-                <div
-                  key={item.id || idx}
-                  style={{
-                    width: `${pct}%`,
-                    backgroundColor: item.color,
-                  }}
-                  className="h-full"
-                />
-              );
-            })}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {activeConfig.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/50"
+        {(activeConfig.showLabel !== false || activeConfig.showProbability !== false) && (
+          <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                {activeConfig.showProbability !== false
+                  ? `確率内訳 (${activeConfig.name})`
+                  : `項目一覧 (${activeConfig.name})`}
+              </h2>
+              <Link
+                href="/settings"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
               >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: item.color || "#6b7280" }}
-                  />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
-                    比重: {item.ratio}
-                  </span>
-                  <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
-                    {getPercentage(item.ratio, activeConfig.items)}%
-                  </span>
-                </div>
+                設定を編集
+              </Link>
+            </div>
+
+            {/* Mini preview bar (確率表示がONの場合のみ表示) */}
+            {activeConfig.showProbability !== false && (
+              <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-3">
+                {activeConfig.items.map((item, idx) => {
+                  const pct = getPercentage(item.ratio, activeConfig.items);
+                  return (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: item.color,
+                      }}
+                      className="h-full"
+                    />
+                  );
+                })}
               </div>
-            ))}
+            )}
+
+            <div className="flex flex-col gap-2">
+              {activeConfig.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/50"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: item.color || "#6b7280" }}
+                    />
+                    {activeConfig.showLabel !== false && (
+                      <span className="font-medium">{item.label}</span>
+                    )}
+                  </div>
+                  {activeConfig.showProbability !== false && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
+                        比重: {item.ratio}
+                      </span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
+                        {getPercentage(item.ratio, activeConfig.items)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Stats & History */}
         {history.length > 0 && (
