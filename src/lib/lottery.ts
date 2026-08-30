@@ -6,10 +6,13 @@ export interface LotteryItem {
   limit?: number; // 当選上限数 (1以上の正の整数。undefined または 0 の場合は無制限)
 }
 
+export type LotteryAnimationType = "card" | "wheel";
+
 export interface LotteryConfig {
   id: string;
   name: string;
   items: LotteryItem[];
+  animationType?: LotteryAnimationType; // "card" (フラッシュカード) | "wheel" (円盤ルーレット)
   showLabel?: boolean;
   showProbability?: boolean;
   showHistory?: boolean;
@@ -40,6 +43,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-1", label: "当たり", ratio: 3, color: "#059669" },
       { id: "item-2", label: "はずれ", ratio: 7, color: "#4b5563" },
     ],
+    animationType: "card",
     showLabel: true,
     showProbability: true,
     showHistory: true,
@@ -58,6 +62,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-4", label: "吉", ratio: 3, color: "#059669" },
       { id: "item-5", label: "凶", ratio: 1, color: "#4b5563" },
     ],
+    animationType: "wheel",
     showLabel: true,
     showProbability: true,
     showHistory: true,
@@ -77,6 +82,7 @@ export const DEFAULT_CONFIGS: LotteryConfig[] = [
       { id: "item-5", label: "5", ratio: 1, color: "#ea580c" },
       { id: "item-6", label: "6", ratio: 1, color: "#e11d48" },
     ],
+    animationType: "wheel",
     showLabel: true,
     showProbability: true,
     showHistory: true,

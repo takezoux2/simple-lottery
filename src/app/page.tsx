@@ -1,5 +1,6 @@
 "use client";
 
+import { RouletteWheel } from "@/components/RouletteWheel";
 import {
   DEFAULT_CONFIGS,
   type LotteryConfig,
@@ -27,6 +28,7 @@ export default function Home() {
   const [configs, setConfigs] = useState<LotteryConfig[]>(DEFAULT_CONFIGS);
   const [activeConfig, setActiveConfig] = useState<LotteryConfig>(DEFAULT_CONFIGS[0]);
   const [currentResult, setCurrentResult] = useState<LotteryItem | null>(null);
+  const [targetWheelResult, setTargetWheelResult] = useState<LotteryItem | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [history, setHistory] = useState<DrawHistoryItem[]>([]);
   const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
@@ -48,6 +50,7 @@ export default function Home() {
     if (target) {
       setActiveConfig(target);
       setCurrentResult(null);
+      setTargetWheelResult(null);
       setHistory(getStoredHistory(target.id));
       setHitCounts(getStoredHitCounts(target.id));
     }
@@ -62,31 +65,57 @@ export default function Home() {
     return isAllLimitsReached(activeConfig.items, hitCounts);
   }, [activeConfig.items, hitCounts]);
 
+  // ルーレット停止時のハンドラー
+  const handleWheelSpinEnd = useCallback(() => {
+    if (targetWheelResult) {
+      setCurrentResult(targetWheelResult);
+      const updatedHistory = addHistoryItem(
+        activeConfig.id,
+        targetWheelResult,
+        activeConfig.maxHistoryCount ?? 20,
+      );
+      const updatedHitCounts = incrementHitCount(activeConfig.id, targetWheelResult.id);
+      setHitCounts(updatedHitCounts);
+      setHistory(updatedHistory);
+      setIsDrawing(false);
+    }
+  }, [activeConfig, targetWheelResult]);
+
+  // くじ引き実行
   const handleDraw = useCallback(() => {
     const currentAvailable = getAvailableLotteryItems(activeConfig.items, hitCounts);
     if (isDrawing || currentAvailable.length === 0) return;
-    setIsDrawing(true);
 
-    let count = 0;
-    const interval = setInterval(() => {
-      const tempIndex = Math.floor(Math.random() * currentAvailable.length);
-      setCurrentResult(currentAvailable[tempIndex]);
-      count++;
-      if (count > 8) {
-        clearInterval(interval);
-        const finalResult = chooseLottery(currentAvailable);
-        setCurrentResult(finalResult);
-        const updatedHistory = addHistoryItem(
-          activeConfig.id,
-          finalResult,
-          activeConfig.maxHistoryCount ?? 20,
-        );
-        const updatedHitCounts = incrementHitCount(activeConfig.id, finalResult.id);
-        setHitCounts(updatedHitCounts);
-        setHistory(updatedHistory);
-        setIsDrawing(false);
-      }
-    }, 60);
+    if (activeConfig.animationType === "wheel") {
+      // 円盤ルーレット演出
+      const finalResult = chooseLottery(currentAvailable);
+      setTargetWheelResult(finalResult);
+      setCurrentResult(null);
+      setIsDrawing(true);
+    } else {
+      // フラッシュカード演出（文字の高速切り替え）
+      setIsDrawing(true);
+      let count = 0;
+      const interval = setInterval(() => {
+        const tempIndex = Math.floor(Math.random() * currentAvailable.length);
+        setCurrentResult(currentAvailable[tempIndex]);
+        count++;
+        if (count > 8) {
+          clearInterval(interval);
+          const finalResult = chooseLottery(currentAvailable);
+          setCurrentResult(finalResult);
+          const updatedHistory = addHistoryItem(
+            activeConfig.id,
+            finalResult,
+            activeConfig.maxHistoryCount ?? 20,
+          );
+          const updatedHitCounts = incrementHitCount(activeConfig.id, finalResult.id);
+          setHitCounts(updatedHitCounts);
+          setHistory(updatedHistory);
+          setIsDrawing(false);
+        }
+      }, 60);
+    }
   }, [activeConfig, hitCounts, isDrawing]);
 
   const handleResetHistory = () => {
@@ -99,6 +128,7 @@ export default function Home() {
     setHistory([]);
     setHitCounts({});
     setCurrentResult(null);
+    setTargetWheelResult(null);
   };
 
   return (
@@ -160,13 +190,14 @@ export default function Home() {
                   key={cfg.id}
                   type="button"
                   onClick={() => handleSelectConfig(cfg.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                     isSelected
                       ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/30"
                       : "bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
                   }`}
                 >
-                  {cfg.name}
+                  <span>{cfg.animationType === "wheel" ? "🎡" : "🎴"}</span>
+                  <span>{cfg.name}</span>
                 </button>
               );
             })}
@@ -180,47 +211,87 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Lottery Card */}
-        <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center gap-6">
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-              {activeConfig.name}
-            </span>
+        {/* Lottery Main Card */}
+        <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center gap-6">
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                <span>
+                  {activeConfig.animationType === "wheel"
+                    ? "🎡 円盤ルーレット"
+                    : "🎴 フラッシュカード"}
+                </span>
+                <span>•</span>
+                <span>{activeConfig.name}</span>
+              </span>
+            </div>
             <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
               {allLimitsReached
                 ? "すべての項目が上限に達しました"
-                : "ボタンを押してくじを引いてください"}
+                : isDrawing
+                  ? activeConfig.animationType === "wheel"
+                    ? "ルーレット回転中..."
+                    : "抽選中..."
+                  : "ボタンを押してくじを引いてください"}
             </div>
           </div>
 
-          {/* Result Display Box */}
-          <div
-            className={`w-full max-w-sm h-48 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${
-              currentResult
-                ? "shadow-lg bg-slate-50 dark:bg-slate-800/50"
-                : "bg-slate-50 dark:bg-slate-800/30 border-dashed border-slate-300 dark:border-slate-700"
-            }`}
-            style={{
-              borderColor: currentResult?.color || undefined,
-            }}
-          >
-            {currentResult ? (
-              <div
-                className={`text-5xl sm:text-6xl font-black tracking-wider transition-transform duration-150 ${
-                  isDrawing ? "scale-90 opacity-70" : "scale-100 opacity-100"
-                }`}
-                style={{
-                  color: currentResult.color || "inherit",
-                }}
-              >
-                {currentResult.label}
-              </div>
-            ) : (
-              <span className="text-6xl font-bold text-slate-300 dark:text-slate-600 select-none">
-                ？
-              </span>
-            )}
-          </div>
+          {/* Animation View: Wheel vs Flashcard */}
+          {activeConfig.animationType === "wheel" ? (
+            <div className="flex flex-col items-center gap-4 w-full">
+              <RouletteWheel
+                items={availableItems}
+                isSpinning={isDrawing}
+                targetResult={targetWheelResult}
+                onSpinEnd={handleWheelSpinEnd}
+              />
+
+              {/* Result Banner under Roulette */}
+              {currentResult && !isDrawing && (
+                <div
+                  className="w-full max-w-sm py-4 px-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border-2 shadow-md transition-all animate-fade-in flex flex-col items-center gap-1"
+                  style={{ borderColor: currentResult.color || "#6366f1" }}
+                >
+                  <span className="text-xs font-semibold text-slate-400">当選結果</span>
+                  <div
+                    className="text-4xl sm:text-5xl font-black tracking-wider"
+                    style={{ color: currentResult.color || "inherit" }}
+                  >
+                    {currentResult.label}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Result Display Box (Flashcard) */
+            <div
+              className={`w-full max-w-sm h-48 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${
+                currentResult
+                  ? "shadow-lg bg-slate-50 dark:bg-slate-800/50"
+                  : "bg-slate-50 dark:bg-slate-800/30 border-dashed border-slate-300 dark:border-slate-700"
+              }`}
+              style={{
+                borderColor: currentResult?.color || undefined,
+              }}
+            >
+              {currentResult ? (
+                <div
+                  className={`text-5xl sm:text-6xl font-black tracking-wider transition-transform duration-150 ${
+                    isDrawing ? "scale-90 opacity-70" : "scale-100 opacity-100"
+                  }`}
+                  style={{
+                    color: currentResult.color || "inherit",
+                  }}
+                >
+                  {currentResult.label}
+                </div>
+              ) : (
+                <span className="text-6xl font-bold text-slate-300 dark:text-slate-600 select-none">
+                  ？
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Action Button & All Limits Reached Alert */}
           <div className="w-full max-w-xs flex flex-col items-center gap-3">
@@ -233,8 +304,12 @@ export default function Home() {
               {allLimitsReached
                 ? "すべての上限に達しました"
                 : isDrawing
-                  ? "抽選中..."
-                  : "くじを引く"}
+                  ? activeConfig.animationType === "wheel"
+                    ? "ルーレット回転中..."
+                    : "抽選中..."
+                  : activeConfig.animationType === "wheel"
+                    ? "ルーレットを回す"
+                    : "くじを引く"}
             </button>
 
             {allLimitsReached && (

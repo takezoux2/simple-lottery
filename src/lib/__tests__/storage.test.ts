@@ -178,13 +178,14 @@ describe("storage management", () => {
     expect(getStoredHitCounts(DEFAULT_CONFIGS[0].id)).toEqual({});
   });
 
-  it("should save and duplicate custom showLabel, showProbability, showHistory, showLimit, maxHistoryCount flags", () => {
+  it("should save and duplicate custom showLabel, showProbability, showHistory, showLimit, maxHistoryCount, animationType flags", () => {
     const newConfigData = {
       name: "ブラインドくじ",
       items: [
         { id: "1", label: "シークレットA", ratio: 1, color: "#e11d48", limit: 5 },
         { id: "2", label: "シークレットB", ratio: 2, color: "#059669" },
       ],
+      animationType: "wheel" as const,
       showLabel: false,
       showProbability: false,
       showHistory: false,
@@ -193,21 +194,24 @@ describe("storage management", () => {
     };
 
     const { savedConfig, configs } = saveConfig(newConfigData, true);
+    expect(savedConfig.animationType).toBe("wheel");
     expect(savedConfig.showLabel).toBe(false);
     expect(savedConfig.showProbability).toBe(false);
     expect(savedConfig.showHistory).toBe(false);
     expect(savedConfig.showLimit).toBe(false);
     expect(savedConfig.maxHistoryCount).toBe(15);
     expect(savedConfig.items[0].limit).toBe(5);
+    expect(configs[0].animationType).toBe("wheel");
     expect(configs[0].showLabel).toBe(false);
     expect(configs[0].showProbability).toBe(false);
     expect(configs[0].showHistory).toBe(false);
     expect(configs[0].showLimit).toBe(false);
     expect(configs[0].maxHistoryCount).toBe(15);
 
-    // 複製時にフラグとlimitが引き継がれること
+    // 複製時にフラグとlimit、animationTypeが引き継がれること
     const dupResult = duplicateConfig(savedConfig.id);
     expect(dupResult).not.toBeNull();
+    expect(dupResult?.duplicated.animationType).toBe("wheel");
     expect(dupResult?.duplicated.showLabel).toBe(false);
     expect(dupResult?.duplicated.showProbability).toBe(false);
     expect(dupResult?.duplicated.showHistory).toBe(false);
@@ -220,12 +224,14 @@ describe("storage management", () => {
       id: savedConfig.id,
       name: "一部開示くじ",
       items: savedConfig.items,
+      animationType: "card",
       showLabel: true,
       showProbability: false,
       showHistory: true,
       showLimit: true,
       maxHistoryCount: 50,
     });
+    expect(updateResult.savedConfig.animationType).toBe("card");
     expect(updateResult.savedConfig.showLabel).toBe(true);
     expect(updateResult.savedConfig.showProbability).toBe(false);
     expect(updateResult.savedConfig.showHistory).toBe(true);

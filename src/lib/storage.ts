@@ -1,4 +1,9 @@
-import { DEFAULT_CONFIGS, type LotteryConfig, type LotteryItem } from "./lottery";
+import {
+  DEFAULT_CONFIGS,
+  type LotteryAnimationType,
+  type LotteryConfig,
+  type LotteryItem,
+} from "./lottery";
 
 export const LOTTERY_CONFIGS_KEY = "simple_lottery_configs_v1";
 export const LOTTERY_ACTIVE_ID_KEY = "simple_lottery_active_id_v1";
@@ -119,6 +124,7 @@ export function saveConfig(
     id?: string;
     name: string;
     items: LotteryItem[];
+    animationType?: LotteryAnimationType;
     showLabel?: boolean;
     showProbability?: boolean;
     showHistory?: boolean;
@@ -146,6 +152,7 @@ export function saveConfig(
       id: configData.id,
       name: configData.name.trim() || "無題の設定",
       items: configData.items,
+      animationType: configData.animationType ?? "card",
       showLabel: configData.showLabel !== false,
       showProbability: configData.showProbability !== false,
       showHistory: configData.showHistory !== false,
@@ -168,6 +175,7 @@ export function saveConfig(
     id: configData.id || generateId(),
     name: configData.name.trim() || "新規設定",
     items: configData.items,
+    animationType: configData.animationType ?? "card",
     showLabel: configData.showLabel !== false,
     showProbability: configData.showProbability !== false,
     showHistory: configData.showHistory !== false,
@@ -203,6 +211,7 @@ export function duplicateConfig(
       ...item,
       id: generateId(),
     })),
+    animationType: target.animationType ?? "card",
     showLabel: target.showLabel !== false,
     showProbability: target.showProbability !== false,
     showHistory: target.showHistory !== false,
