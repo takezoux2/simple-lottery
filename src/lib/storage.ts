@@ -1,7 +1,9 @@
 import {
   DEFAULT_CONFIGS,
+  DEFAULT_DRAW_MODE,
   type LotteryAnimationType,
   type LotteryConfig,
+  type LotteryDrawMode,
   type LotteryItem,
 } from "./lottery";
 
@@ -147,6 +149,7 @@ export function saveConfig(
     id?: string;
     name: string;
     items: LotteryItem[];
+    drawMode?: LotteryDrawMode;
     animationType?: LotteryAnimationType;
     showLabel?: boolean;
     showProbability?: boolean;
@@ -205,6 +208,7 @@ export function saveConfig(
       id: targetId,
       name: configData.name.trim() || "無題の設定",
       items: configData.items,
+      drawMode: configData.drawMode ?? DEFAULT_DRAW_MODE,
       animationType: configData.animationType ?? "card",
       showLabel: configData.showLabel !== false,
       showProbability: configData.showProbability !== false,
@@ -231,6 +235,7 @@ export function saveConfig(
       id: configData.id,
       name: configData.name.trim() || "無題の設定",
       items: configData.items,
+      drawMode: configData.drawMode ?? DEFAULT_DRAW_MODE,
       animationType: configData.animationType ?? "card",
       showLabel: configData.showLabel !== false,
       showProbability: configData.showProbability !== false,
@@ -254,6 +259,7 @@ export function saveConfig(
     id: targetId,
     name: configData.name.trim() || "新規設定",
     items: configData.items,
+    drawMode: configData.drawMode ?? DEFAULT_DRAW_MODE,
     animationType: configData.animationType ?? "card",
     showLabel: configData.showLabel !== false,
     showProbability: configData.showProbability !== false,
@@ -290,6 +296,7 @@ export function duplicateConfig(
       ...item,
       id: generateId(),
     })),
+    drawMode: target.drawMode ?? DEFAULT_DRAW_MODE,
     animationType: target.animationType ?? "card",
     showLabel: target.showLabel !== false,
     showProbability: target.showProbability !== false,

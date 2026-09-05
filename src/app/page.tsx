@@ -5,11 +5,16 @@ import { RouletteWheel } from "@/components/RouletteWheel";
 import * as gtag from "@/lib/gtag";
 import {
   DEFAULT_CONFIGS,
+  DEFAULT_DRAW_MODE,
   type LotteryConfig,
   type LotteryItem,
   chooseLottery,
-  getAvailableLotteryItems,
+  getDrawTable,
+  getItemCount,
   getPercentage,
+  getRemainingCount,
+  getTotalItemCount,
+  getTotalRemainingCount,
   isAllLimitsReached,
 } from "@/lib/lottery";
 import {
@@ -105,14 +110,25 @@ function HomeContent() {
     }
   };
 
-  // 有効な抽選対象項目（上限未到達の項目）
-  const availableItems = useMemo(() => {
-    return getAvailableLotteryItems(activeConfig.items, hitCounts);
-  }, [activeConfig.items, hitCounts]);
+  // くじの種類（未設定の既存データは確率指定くじとして扱う）
+  const drawMode = activeConfig.drawMode ?? DEFAULT_DRAW_MODE;
+  const isCountMode = drawMode === "count";
+
+  // 抽選に使用する重み付きテーブル（個数指定くじでは比重＝残り個数）
+  const drawTable = useMemo(() => {
+    return getDrawTable(activeConfig.items, hitCounts, drawMode);
+  }, [activeConfig.items, hitCounts, drawMode]);
 
   const allLimitsReached = useMemo(() => {
-    return isAllLimitsReached(activeConfig.items, hitCounts);
-  }, [activeConfig.items, hitCounts]);
+    return isAllLimitsReached(activeConfig.items, hitCounts, drawMode);
+  }, [activeConfig.items, hitCounts, drawMode]);
+
+  // 個数指定くじの総本数・残り本数
+  const totalItemCount = useMemo(() => getTotalItemCount(activeConfig.items), [activeConfig.items]);
+  const totalRemainingCount = useMemo(
+    () => getTotalRemainingCount(activeConfig.items, hitCounts),
+    [activeConfig.items, hitCounts],
+  );
 
   // ルーレット停止時のハンドラー
   const handleWheelSpinEnd = useCallback(() => {
@@ -136,25 +152,32 @@ function HomeContent() {
         item_id: targetWheelResult.id,
         item_label: targetWheelResult.label,
         animation_type: "wheel",
+        draw_mode: drawMode,
       });
     }
-  }, [activeConfig, targetWheelResult]);
+  }, [activeConfig, drawMode, targetWheelResult]);
 
   // くじ引き実行
   const handleDraw = useCallback(() => {
-    const currentAvailable = getAvailableLotteryItems(activeConfig.items, hitCounts);
-    if (isDrawing || currentAvailable.length === 0) return;
+    const currentTable = getDrawTable(activeConfig.items, hitCounts, drawMode);
+    if (isDrawing || currentTable.length === 0) return;
+
+    // 抽選テーブルは比重を差し替えている場合があるため、元の項目定義に解決して記録する
+    const drawOne = (): LotteryItem => {
+      const picked = chooseLottery(currentTable);
+      return activeConfig.items.find((item) => item.id === picked.id) ?? picked;
+    };
 
     if (activeConfig.animationType === "wheel") {
       // 円盤ルーレット演出
-      const finalResult = chooseLottery(currentAvailable);
+      const finalResult = drawOne();
       setTargetWheelResult(finalResult);
       setCurrentResult(null);
       setIsDrawing(true);
     } else {
       // フラッシュカード演出（3秒間、徐々に表示時間を伸ばすイージング減速演出）
       setIsDrawing(true);
-      const finalResult = chooseLottery(currentAvailable);
+      const finalResult = drawOne();
       const TOTAL_DURATION = 3000;
       const MIN_DELAY = 50;
       const MAX_DELAY = 450;
@@ -187,19 +210,20 @@ function HomeContent() {
             item_id: finalResult.id,
             item_label: finalResult.label,
             animation_type: "flashcard",
+            draw_mode: drawMode,
           });
           return;
         }
 
         // 次の表示項目を選択（2つ以上ある場合は直前と重複しないようにする）
-        let nextIndex = Math.floor(Math.random() * currentAvailable.length);
-        if (currentAvailable.length > 1 && nextIndex === lastIndex) {
+        let nextIndex = Math.floor(Math.random() * currentTable.length);
+        if (currentTable.length > 1 && nextIndex === lastIndex) {
           nextIndex =
-            (nextIndex + 1 + Math.floor(Math.random() * (currentAvailable.length - 1))) %
-            currentAvailable.length;
+            (nextIndex + 1 + Math.floor(Math.random() * (currentTable.length - 1))) %
+            currentTable.length;
         }
         lastIndex = nextIndex;
-        setCurrentResult(currentAvailable[nextIndex]);
+        setCurrentResult(currentTable[nextIndex]);
 
         // 徐々に遅延を長くして減速感を演出 (progress^1.8)
         const currentDelay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * progress ** 1.8;
@@ -208,7 +232,7 @@ function HomeContent() {
 
       step();
     }
-  }, [activeConfig, hitCounts, isDrawing]);
+  }, [activeConfig, drawMode, hitCounts, isDrawing]);
 
   const handleResetHistory = () => {
     if (
@@ -251,6 +275,7 @@ function HomeContent() {
               >
                 {configs.map((cfg) => (
                   <option key={cfg.id} value={cfg.id}>
+                    {cfg.drawMode === "count" ? "📦 " : ""}
                     {cfg.animationType === "wheel" ? "🎡 " : "🎴 "}
                     {cfg.name}
                   </option>
@@ -313,7 +338,7 @@ function HomeContent() {
           {activeConfig.animationType === "wheel" ? (
             <div className="flex flex-col items-center gap-4 w-full">
               <RouletteWheel
-                items={availableItems}
+                items={drawTable}
                 isSpinning={isDrawing}
                 targetResult={targetWheelResult}
                 onSpinEnd={handleWheelSpinEnd}
@@ -375,7 +400,9 @@ function HomeContent() {
               className="w-full py-4 px-8 rounded-2xl font-bold text-lg text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-md shadow-indigo-500/20 transition-all duration-150"
             >
               {allLimitsReached
-                ? "すべての上限に達しました"
+                ? isCountMode
+                  ? "すべて引き切りました"
+                  : "すべての上限に達しました"
                 : isDrawing
                   ? activeConfig.animationType === "wheel"
                     ? "ルーレット回転中..."
@@ -388,7 +415,9 @@ function HomeContent() {
             {allLimitsReached && (
               <div className="w-full p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-center flex flex-col items-center gap-2">
                 <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                  すべてのくじが上限に達しました
+                  {isCountMode
+                    ? `くじ${totalItemCount}本をすべて引き切りました`
+                    : "すべてのくじが上限に達しました"}
                 </span>
                 <button
                   type="button"
@@ -406,10 +435,17 @@ function HomeContent() {
         {(activeConfig.showLabel !== false || activeConfig.showProbability !== false) && (
           <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {activeConfig.showProbability !== false
-                  ? `確率内訳 (${activeConfig.name})`
-                  : `項目一覧 (${activeConfig.name})`}
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 flex-wrap">
+                <span>
+                  {activeConfig.showProbability !== false
+                    ? `確率内訳 (${activeConfig.name})`
+                    : `項目一覧 (${activeConfig.name})`}
+                </span>
+                {isCountMode && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300">
+                    📦 残り {totalRemainingCount}/{totalItemCount} 本
+                  </span>
+                )}
               </h2>
               <Link
                 href="/settings"
@@ -423,11 +459,15 @@ function HomeContent() {
             {activeConfig.showProbability !== false && (
               <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-3">
                 {activeConfig.items.map((item, idx) => {
+                  const remaining = getRemainingCount(item, hitCounts);
                   const isLimited =
                     item.limit !== undefined && item.limit !== null && item.limit > 0;
                   const currentHits = hitCounts[item.id] || 0;
-                  const isReached = isLimited && currentHits >= (item.limit as number);
-                  const pct = isReached ? 0 : getPercentage(item.ratio, availableItems);
+                  const isReached = isCountMode
+                    ? remaining <= 0
+                    : isLimited && currentHits >= (item.limit as number);
+                  const weight = isCountMode ? remaining : item.ratio;
+                  const pct = isReached ? 0 : getPercentage(weight, drawTable);
                   if (pct <= 0) return null;
 
                   return (
@@ -448,8 +488,14 @@ function HomeContent() {
               {activeConfig.items.map((item) => {
                 const isLimited = item.limit !== undefined && item.limit !== null && item.limit > 0;
                 const currentHits = hitCounts[item.id] || 0;
-                const isReached = isLimited && currentHits >= (item.limit as number);
-                const pct = isReached ? 0 : getPercentage(item.ratio, availableItems);
+                const totalCount = getItemCount(item);
+                const remaining = getRemainingCount(item, hitCounts);
+                const isReached = isCountMode
+                  ? remaining <= 0
+                  : isLimited && currentHits >= (item.limit as number);
+                const pct = isReached
+                  ? 0
+                  : getPercentage(isCountMode ? remaining : item.ratio, drawTable);
 
                 return (
                   <div
@@ -468,24 +514,33 @@ function HomeContent() {
                       {activeConfig.showLabel !== false && (
                         <span className="font-medium">{item.label}</span>
                       )}
-                      {/* 上限到達バッジ */}
+                      {/* 上限到達・引き切りバッジ */}
                       {isReached && (
                         <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 no-underline inline-block">
-                          上限到達
+                          {isCountMode ? "引き切り" : "上限到達"}
+                        </span>
+                      )}
+                      {/* 残り個数表示 (個数指定くじ) */}
+                      {!isReached && isCountMode && activeConfig.showLimit !== false && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
+                          (残り {remaining}/{totalCount}個)
                         </span>
                       )}
                       {/* 上限表示 (showLimit !== false かつ 未到達の場合) */}
-                      {!isReached && isLimited && activeConfig.showLimit !== false && (
-                        <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
-                          (当選 {currentHits}/{item.limit}回)
-                        </span>
-                      )}
+                      {!isReached &&
+                        !isCountMode &&
+                        isLimited &&
+                        activeConfig.showLimit !== false && (
+                          <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
+                            (当選 {currentHits}/{item.limit}回)
+                          </span>
+                        )}
                     </div>
 
                     {activeConfig.showProbability !== false && (
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-slate-400 dark:text-slate-500 font-mono no-underline">
-                          比重: {item.ratio}
+                          {isCountMode ? `個数: ${totalCount}` : `比重: ${item.ratio}`}
                         </span>
                         <span
                           className={`font-bold font-mono no-underline ${
@@ -538,7 +593,11 @@ function HomeContent() {
                   const isLimited =
                     item.limit !== undefined && item.limit !== null && item.limit > 0;
                   const currentHits = hitCounts[item.id] || 0;
-                  const isReached = isLimited && currentHits >= (item.limit as number);
+                  const totalCount = getItemCount(item);
+                  const remaining = getRemainingCount(item, hitCounts);
+                  const isReached = isCountMode
+                    ? remaining <= 0
+                    : isLimited && currentHits >= (item.limit as number);
 
                   return (
                     <div
@@ -562,13 +621,17 @@ function HomeContent() {
                           ({rate}%)
                         </span>
                       </div>
-                      {isLimited && activeConfig.showLimit !== false && (
+                      {(isCountMode || isLimited) && activeConfig.showLimit !== false && (
                         <div className="text-[10px] text-slate-400 mt-0.5">
                           {isReached ? (
-                            <span className="text-rose-500 font-bold">上限到達</span>
+                            <span className="text-rose-500 font-bold">
+                              {isCountMode ? "引き切り" : "上限到達"}
+                            </span>
                           ) : (
                             <span>
-                              当選 {currentHits}/{item.limit}
+                              {isCountMode
+                                ? `残り ${remaining}/${totalCount}`
+                                : `当選 ${currentHits}/${item.limit}`}
                             </span>
                           )}
                         </div>

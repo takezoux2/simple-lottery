@@ -290,6 +290,46 @@ describe("storage management", () => {
     expect(updateResult.savedConfig.maxHistoryCount).toBe(50);
   });
 
+  it("should save, update and duplicate count-mode configs with item counts", () => {
+    const { savedConfig } = saveConfig(
+      {
+        name: "箱くじ",
+        items: [
+          { id: "1", label: "当たり", ratio: 1, color: "#e11d48", count: 2 },
+          { id: "2", label: "はずれ", ratio: 1, color: "#4b5563", count: 8 },
+        ],
+        drawMode: "count",
+        animationType: "card",
+      },
+      true,
+    );
+    expect(savedConfig.drawMode).toBe("count");
+    expect(savedConfig.items[0].count).toBe(2);
+    expect(savedConfig.items[1].count).toBe(8);
+
+    // 複製時に drawMode と個数が引き継がれること
+    const dupResult = duplicateConfig(savedConfig.id);
+    expect(dupResult?.duplicated.drawMode).toBe("count");
+    expect(dupResult?.duplicated.items.map((i) => i.count)).toEqual([2, 8]);
+
+    // 確率指定くじへ切り替えられること
+    const updated = saveConfig({
+      id: savedConfig.id,
+      name: "箱くじ",
+      items: savedConfig.items,
+      drawMode: "probability",
+    });
+    expect(updated.savedConfig.drawMode).toBe("probability");
+  });
+
+  it("should default drawMode to probability when not specified", () => {
+    const { savedConfig } = saveConfig({
+      name: "既定のくじ",
+      items: [{ id: "1", label: "A", ratio: 1 }],
+    });
+    expect(savedConfig.drawMode).toBe("probability");
+  });
+
   it("should clamp maxHistoryCount between 1 and 500", () => {
     const { savedConfig: c1 } = saveConfig({
       name: "最小値テスト",

@@ -4,11 +4,17 @@ import { Footer } from "@/components/Footer";
 import * as gtag from "@/lib/gtag";
 import {
   DEFAULT_CONFIGS,
+  DEFAULT_DRAW_MODE,
+  DEFAULT_ITEM_COUNT,
   type LotteryAnimationType,
   type LotteryConfig,
+  type LotteryDrawMode,
   type LotteryItem,
   PRESET_COLORS,
+  getItemCount,
   getPercentage,
+  getRemainingCount,
+  getTotalItemCount,
 } from "@/lib/lottery";
 import {
   DEFAULT_MAX_HISTORY_COUNT,
@@ -39,6 +45,7 @@ interface FormItemState {
   ratio: number;
   color: string;
   limit?: number;
+  count: number;
 }
 
 export default function SettingsPage() {
@@ -52,6 +59,7 @@ export default function SettingsPage() {
   // フォーム状態
   const [formId, setFormId] = useState("");
   const [formName, setFormName] = useState("");
+  const [formDrawMode, setFormDrawMode] = useState<LotteryDrawMode>(DEFAULT_DRAW_MODE);
   const [formAnimationType, setFormAnimationType] = useState<LotteryAnimationType>("card");
   const [formItems, setFormItems] = useState<FormItemState[]>([]);
   const [formShowLabel, setFormShowLabel] = useState(true);
@@ -92,10 +100,25 @@ export default function SettingsPage() {
     setEditingId(null);
     setFormId(generateShortId(5));
     setFormName("新しいくじ設定");
+    setFormDrawMode(DEFAULT_DRAW_MODE);
     setFormAnimationType("card");
     setFormItems([
-      { id: generateId(), label: "項目1", ratio: 1, color: PRESET_COLORS[0], limit: undefined },
-      { id: generateId(), label: "項目2", ratio: 1, color: PRESET_COLORS[1], limit: undefined },
+      {
+        id: generateId(),
+        label: "項目1",
+        ratio: 1,
+        color: PRESET_COLORS[0],
+        limit: undefined,
+        count: DEFAULT_ITEM_COUNT,
+      },
+      {
+        id: generateId(),
+        label: "項目2",
+        ratio: 1,
+        color: PRESET_COLORS[1],
+        limit: undefined,
+        count: DEFAULT_ITEM_COUNT,
+      },
     ]);
     setFormShowLabel(true);
     setFormShowProbability(true);
@@ -111,6 +134,7 @@ export default function SettingsPage() {
     setEditingId(config.id);
     setFormId(config.id);
     setFormName(config.name);
+    setFormDrawMode(config.drawMode ?? DEFAULT_DRAW_MODE);
     setFormAnimationType(config.animationType ?? "card");
     setFormItems(
       config.items.map((item, index) => ({
@@ -119,6 +143,7 @@ export default function SettingsPage() {
         ratio: Math.max(1, Math.round(item.ratio || 1)),
         color: item.color || PRESET_COLORS[index % PRESET_COLORS.length],
         limit: item.limit && item.limit > 0 ? item.limit : undefined,
+        count: Math.max(1, getItemCount(item)),
       })),
     );
     setFormShowLabel(config.showLabel !== false);
@@ -220,6 +245,7 @@ export default function SettingsPage() {
         ratio: 1,
         color: nextColor,
         limit: undefined,
+        count: DEFAULT_ITEM_COUNT,
       },
     ]);
   };
@@ -283,6 +309,26 @@ export default function SettingsPage() {
     });
   };
 
+  // フォーム内: 当たり個数更新 (1以上の正の整数)
+  const handleItemCountChange = (index: number, val: number) => {
+    const safeVal = Math.max(1, Math.floor(val || 1));
+    setFormItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], count: safeVal };
+      return next;
+    });
+  };
+
+  // フォーム内: 当たり個数ステップ増減
+  const handleCountStep = (index: number, delta: number) => {
+    setFormItems((prev) => {
+      const next = [...prev];
+      const newCount = Math.max(1, (next[index].count || 1) + delta);
+      next[index] = { ...next[index], count: newCount };
+      return next;
+    });
+  };
+
   // フォーム内: カラー変更
   const handleItemColorChange = (index: number, color: string) => {
     setFormItems((prev) => {
@@ -293,10 +339,27 @@ export default function SettingsPage() {
     setActiveColorPickerIndex(null);
   };
 
+  const isCountForm = formDrawMode === "count";
+
   // リアルタイム計算: 比重合計
   const totalRatio = useMemo(() => {
     return formItems.reduce((acc, cur) => acc + Math.max(1, cur.ratio || 1), 0);
   }, [formItems]);
+
+  // リアルタイム計算: 総本数（個数指定くじ）
+  const totalFormCount = useMemo(() => {
+    return formItems.reduce((acc, cur) => acc + Math.max(1, cur.count || 1), 0);
+  }, [formItems]);
+
+  // 確率プレビュー用の重みテーブル（個数指定くじでは個数を重みとして扱う）
+  const previewTable = useMemo(() => {
+    return formItems.map((item) => ({
+      ratio: isCountForm ? Math.max(1, item.count || 1) : Math.max(1, item.ratio || 1),
+    }));
+  }, [formItems, isCountForm]);
+
+  const getFormItemWeight = (item: FormItemState) =>
+    isCountForm ? Math.max(1, item.count || 1) : Math.max(1, item.ratio || 1);
 
   // フォーム保存
   const handleSaveForm = (shouldSetActive: boolean) => {
@@ -339,6 +402,10 @@ export default function SettingsPage() {
         setFormError(`項目 ${i + 1} の上限は1以上の整数にしてください`);
         return;
       }
+      if (isCountForm && (!Number.isFinite(formItems[i].count) || formItems[i].count < 1)) {
+        setFormError(`項目 ${i + 1} の当たり個数は1以上の整数にしてください`);
+        return;
+      }
     }
 
     const cleanItems: LotteryItem[] = formItems.map((item) => ({
@@ -347,6 +414,7 @@ export default function SettingsPage() {
       ratio: Math.max(1, Math.floor(item.ratio)),
       color: item.color,
       limit: item.limit && item.limit > 0 ? Math.floor(item.limit) : undefined,
+      count: Math.max(1, Math.floor(item.count || DEFAULT_ITEM_COUNT)),
     }));
 
     const safeMaxHistory = Math.min(
@@ -359,6 +427,7 @@ export default function SettingsPage() {
         id: trimmedId,
         name: trimmedName,
         items: cleanItems,
+        drawMode: formDrawMode,
         animationType: formAnimationType,
         showLabel: formShowLabel,
         showProbability: formShowProbability,
@@ -377,6 +446,7 @@ export default function SettingsPage() {
       label: trimmedName,
       config_id: result.savedConfig.id,
       item_count: cleanItems.length,
+      draw_mode: formDrawMode,
       is_new: !editingId,
     });
     if (editingId && editingId === activeId) {
@@ -477,10 +547,16 @@ export default function SettingsPage() {
             <div className="flex flex-col gap-4">
               {configs.map((config) => {
                 const isActive = config.id === activeId;
+                const isCountConfig = (config.drawMode ?? DEFAULT_DRAW_MODE) === "count";
                 const totalCfgRatio = config.items.reduce(
                   (acc, cur) => acc + Math.max(1, cur.ratio || 1),
                   0,
                 );
+                const totalCfgCount = getTotalItemCount(config.items);
+                // 個数指定くじでは個数を重みとして確率を算出する
+                const cfgWeightTable = config.items.map((item) => ({
+                  ratio: isCountConfig ? getItemCount(item) : item.ratio,
+                }));
 
                 return (
                   <div
@@ -510,6 +586,19 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 dark:text-slate-500 mt-1">
                           <span className="inline-flex items-center gap-1">
+                            種類:
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                isCountConfig
+                                  ? "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"
+                                  : "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300"
+                              }`}
+                            >
+                              {isCountConfig ? "📦 個数指定" : "🎯 確率指定"}
+                            </span>
+                          </span>
+                          <span>•</span>
+                          <span className="inline-flex items-center gap-1">
                             演出:
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -525,7 +614,10 @@ export default function SettingsPage() {
                           </span>
                           <span>•</span>
                           <span>
-                            項目数: {config.items.length}件 / 比重合計: {totalCfgRatio}
+                            項目数: {config.items.length}件 /{" "}
+                            {isCountConfig
+                              ? `総本数: ${totalCfgCount}本`
+                              : `比重合計: ${totalCfgRatio}`}
                           </span>
                           <span>•</span>
                           <span className="inline-flex items-center gap-1.5 flex-wrap">
@@ -594,7 +686,8 @@ export default function SettingsPage() {
                     {/* Probability Distribution Bar */}
                     <div className="w-full h-3 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800 mb-4">
                       {config.items.map((item, idx) => {
-                        const pct = getPercentage(item.ratio, config.items);
+                        const weight = isCountConfig ? getItemCount(item) : item.ratio;
+                        const pct = getPercentage(weight, cfgWeightTable);
                         return (
                           <div
                             key={item.id || idx}
@@ -603,7 +696,9 @@ export default function SettingsPage() {
                               backgroundColor:
                                 item.color || PRESET_COLORS[idx % PRESET_COLORS.length],
                             }}
-                            title={`${item.label}: ${item.ratio} (${pct}%)`}
+                            title={`${item.label}: ${
+                              isCountConfig ? `${getItemCount(item)}個` : item.ratio
+                            } (${pct}%)`}
                             className="h-full transition-all hover:opacity-80"
                           />
                         );
@@ -613,12 +708,16 @@ export default function SettingsPage() {
                     {/* Items chips */}
                     <div className="flex flex-wrap gap-2 mb-4">
                       {config.items.map((item, idx) => {
-                        const pct = getPercentage(item.ratio, config.items);
+                        const weight = isCountConfig ? getItemCount(item) : item.ratio;
+                        const pct = getPercentage(weight, cfgWeightTable);
                         const hitCounts = getStoredHitCounts(config.id);
                         const hits = hitCounts[item.id] || 0;
                         const isLimited =
                           item.limit !== undefined && item.limit !== null && item.limit > 0;
-                        const isReached = isLimited && hits >= (item.limit as number);
+                        const remaining = getRemainingCount(item, hitCounts);
+                        const isReached = isCountConfig
+                          ? remaining <= 0
+                          : isLimited && hits >= (item.limit as number);
 
                         return (
                           <div
@@ -640,18 +739,34 @@ export default function SettingsPage() {
                               {item.label}
                             </span>
                             <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
-                              比重{item.ratio} ({pct}%)
+                              {isCountConfig ? `個数${getItemCount(item)}` : `比重${item.ratio}`} (
+                              {pct}
+                              %)
                             </span>
-                            {isLimited && (
+                            {isCountConfig ? (
                               <span
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
                                   isReached
                                     ? "bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400"
-                                    : "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400"
+                                    : "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
                                 }`}
                               >
-                                {isReached ? "上限到達" : `上限: ${hits}/${item.limit}`}
+                                {isReached
+                                  ? "引き切り"
+                                  : `残り: ${remaining}/${getItemCount(item)}`}
                               </span>
+                            ) : (
+                              isLimited && (
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
+                                    isReached
+                                      ? "bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400"
+                                      : "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400"
+                                  }`}
+                                >
+                                  {isReached ? "上限到達" : `上限: ${hits}/${item.limit}`}
+                                </span>
+                              )
                             )}
                           </div>
                         );
@@ -812,7 +927,9 @@ export default function SettingsPage() {
                   {viewMode === "create" ? "新規確率設定の作成" : "確率設定の編集"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  項目名と比重（正の整数）を設定するとリアルタイムに確率が算出されます
+                  {isCountForm
+                    ? "項目名と当たり個数（正の整数）を設定するとリアルタイムに確率が算出されます"
+                    : "項目名と比重（正の整数）を設定するとリアルタイムに確率が算出されます"}
                 </p>
               </div>
               <button
@@ -877,6 +994,60 @@ export default function SettingsPage() {
                   </code>
                   ）で直接このくじを指定・共有できます。半角英数字、ハイフン(-)、アンダースコア(_)が使用可能です。
                 </span>
+              </div>
+
+              {/* Draw Mode (くじの種類) Section */}
+              <div className="flex flex-col gap-2">
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  くじの種類
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormDrawMode("probability")}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all ${
+                      formDrawMode === "probability"
+                        ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-sm"
+                        : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600"
+                    }`}
+                  >
+                    <span className="text-2xl shrink-0 mt-0.5">🎯</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        確率指定くじ
+                        {formDrawMode === "probability" && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+                        )}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        比重で確率を決めるくじ。引いても中身は減らず、何度でも抽選できます（当選上限の設定が可能）
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormDrawMode("count")}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all ${
+                      formDrawMode === "count"
+                        ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-sm"
+                        : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600"
+                    }`}
+                  >
+                    <span className="text-2xl shrink-0 mt-0.5">📦</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        個数指定くじ
+                        {formDrawMode === "count" && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+                        )}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        すべての項目に当たり個数を設定する箱くじ。1回引くごとに残り個数が減り、総本数で引き切ります
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               {/* Animation Type Section */}
@@ -969,7 +1140,7 @@ export default function SettingsPage() {
                       className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-900 cursor-pointer"
                     />
                     <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                      凡例に上限を表示
+                      {isCountForm ? "凡例に残り個数を表示" : "凡例に上限を表示"}
                     </span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1078,7 +1249,8 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    項目と比重・上限の設定 <span className="text-rose-500">*</span>
+                    {isCountForm ? "項目と当たり個数の設定" : "項目と比重・上限の設定"}{" "}
+                    <span className="text-rose-500">*</span>
                   </div>
                   <button
                     type="button"
@@ -1104,7 +1276,7 @@ export default function SettingsPage() {
                 {/* Items Editor List */}
                 <div className="flex flex-col gap-2.5">
                   {formItems.map((item, index) => {
-                    const pct = getPercentage(item.ratio, formItems);
+                    const pct = getPercentage(getFormItemWeight(item), previewTable);
                     const isPickerOpen = activeColorPickerIndex === index;
 
                     return (
@@ -1158,52 +1330,97 @@ export default function SettingsPage() {
 
                         {/* Right: Ratio Stepper + Limit Input + Calculated Percentage + Delete */}
                         <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 flex-wrap">
+                          {/* Count Stepper (個数指定くじ) */}
+                          {isCountForm && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-slate-400 shrink-0">個数:</span>
+                              <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCountStep(index, -1)}
+                                  disabled={item.count <= 1}
+                                  className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-xs"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={item.count}
+                                  onChange={(e) =>
+                                    handleItemCountChange(
+                                      index,
+                                      Number.parseInt(e.target.value) || 1,
+                                    )
+                                  }
+                                  className="w-12 text-center text-xs font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  title="この項目の当たり個数（1以上の整数）"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleCountStep(index, 1)}
+                                  className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Ratio Stepper */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] text-slate-400 shrink-0">比重:</span>
-                            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => handleRatioStep(index, -1)}
-                                disabled={item.ratio <= 1}
-                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-xs"
-                              >
-                                -
-                              </button>
+                          {!isCountForm && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-slate-400 shrink-0">比重:</span>
+                              <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 overflow-hidden">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRatioStep(index, -1)}
+                                  disabled={item.ratio <= 1}
+                                  className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none font-bold text-xs"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={item.ratio}
+                                  onChange={(e) =>
+                                    handleItemRatioChange(
+                                      index,
+                                      Number.parseInt(e.target.value) || 1,
+                                    )
+                                  }
+                                  className="w-10 text-center text-xs font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRatioStep(index, 1)}
+                                  className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Limit Input (確率指定くじのみ) */}
+                          {!isCountForm && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-slate-400 shrink-0">上限:</span>
                               <input
                                 type="number"
                                 min="1"
                                 step="1"
-                                value={item.ratio}
-                                onChange={(e) =>
-                                  handleItemRatioChange(index, Number.parseInt(e.target.value) || 1)
-                                }
-                                className="w-10 text-center text-xs font-semibold bg-transparent focus:outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="無制限"
+                                value={item.limit ?? ""}
+                                onChange={(e) => handleItemLimitChange(index, e.target.value)}
+                                className="w-16 text-center text-xs font-semibold px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-slate-400 placeholder:font-normal"
+                                title="空欄で無制限、1以上の整数で当選上限数を指定"
                               />
-                              <button
-                                type="button"
-                                onClick={() => handleRatioStep(index, 1)}
-                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs"
-                              >
-                                +
-                              </button>
                             </div>
-                          </div>
-
-                          {/* Limit Input */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] text-slate-400 shrink-0">上限:</span>
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="無制限"
-                              value={item.limit ?? ""}
-                              onChange={(e) => handleItemLimitChange(index, e.target.value)}
-                              className="w-16 text-center text-xs font-semibold px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-slate-400 placeholder:font-normal"
-                              title="空欄で無制限、1以上の整数で当選上限数を指定"
-                            />
-                          </div>
+                          )}
 
                           {/* Real-time Percentage Badge */}
                           <div className="w-14 text-right font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400">
@@ -1246,12 +1463,14 @@ export default function SettingsPage() {
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex flex-col gap-2">
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-400">
                   <span>リアルタイム確率分布プレビュー</span>
-                  <span>比重合計: {totalRatio}</span>
+                  <span>
+                    {isCountForm ? `総本数: ${totalFormCount}本` : `比重合計: ${totalRatio}`}
+                  </span>
                 </div>
 
                 <div className="w-full h-4 rounded-full overflow-hidden flex bg-slate-200 dark:bg-slate-700">
                   {formItems.map((item, idx) => {
-                    const pct = getPercentage(item.ratio, formItems);
+                    const pct = getPercentage(getFormItemWeight(item), previewTable);
                     return (
                       <div
                         key={item.id || idx}

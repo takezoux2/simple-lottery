@@ -5,7 +5,12 @@ import {
   type LotteryItem,
   chooseLottery,
   getAvailableLotteryItems,
+  getDrawTable,
+  getItemCount,
   getPercentage,
+  getRemainingCount,
+  getTotalItemCount,
+  getTotalRemainingCount,
   isAllLimitsReached,
 } from "../lottery";
 
@@ -103,6 +108,96 @@ describe("lottery logic", () => {
 
     it("should not reach all limits if an unlimited item exists", () => {
       expect(isAllLimitsReached(itemsWithLimit, { "1": 99, "2": 99 })).toBe(false);
+    });
+  });
+
+  describe("count draw mode (個数指定くじ)", () => {
+    const boxItems: LotteryItem[] = [
+      { id: "1", label: "大当たり", ratio: 1, count: 1 },
+      { id: "2", label: "当たり", ratio: 1, count: 2 },
+      { id: "3", label: "はずれ", ratio: 1, count: 7 },
+    ];
+
+    it("should default the item count to 1 when unset or invalid", () => {
+      expect(getItemCount({ id: "x", label: "A", ratio: 5 })).toBe(1);
+      expect(getItemCount({ id: "x", label: "A", ratio: 5, count: 3 })).toBe(3);
+      expect(getItemCount({ id: "x", label: "A", ratio: 5, count: 3.9 })).toBe(3);
+      expect(getItemCount({ id: "x", label: "A", ratio: 5, count: -2 })).toBe(0);
+    });
+
+    it("should calculate remaining counts and totals", () => {
+      expect(getTotalItemCount(boxItems)).toBe(10);
+      expect(getTotalRemainingCount(boxItems, {})).toBe(10);
+
+      const hitCounts = { "1": 1, "2": 1 };
+      expect(getRemainingCount(boxItems[0], hitCounts)).toBe(0);
+      expect(getRemainingCount(boxItems[1], hitCounts)).toBe(1);
+      expect(getRemainingCount(boxItems[2], hitCounts)).toBe(7);
+      expect(getTotalRemainingCount(boxItems, hitCounts)).toBe(8);
+      // 当選数が個数を上回っても残りは0未満にならない
+      expect(getRemainingCount(boxItems[0], { "1": 5 })).toBe(0);
+    });
+
+    it("should exclude items whose remaining count is zero", () => {
+      expect(getAvailableLotteryItems(boxItems, {}, "count")).toHaveLength(3);
+
+      const available = getAvailableLotteryItems(boxItems, { "1": 1, "2": 2 }, "count");
+      expect(available).toHaveLength(1);
+      expect(available[0].id).toBe("3");
+    });
+
+    it("should detect when every lottery ticket has been drawn", () => {
+      expect(isAllLimitsReached(boxItems, { "1": 1, "2": 2 }, "count")).toBe(false);
+      expect(isAllLimitsReached(boxItems, { "1": 1, "2": 2, "3": 7 }, "count")).toBe(true);
+    });
+
+    it("should build a draw table weighted by the remaining counts", () => {
+      const table = getDrawTable(boxItems, {}, "count");
+      expect(table.map((i) => i.ratio)).toEqual([1, 2, 7]);
+      expect(getPercentage(1, table)).toBe(10);
+
+      // 「当たり」を1本引いた後は残り 1 / 1 / 7 (合計9本)
+      const afterTable = getDrawTable(boxItems, { "2": 1 }, "count");
+      expect(afterTable.map((i) => i.ratio)).toEqual([1, 1, 7]);
+      expect(getTotalRemainingCount(boxItems, { "2": 1 })).toBe(9);
+
+      // 引き切った項目はテーブルから除外される
+      const lastTable = getDrawTable(boxItems, { "1": 1, "2": 2, "3": 6 }, "count");
+      expect(lastTable).toHaveLength(1);
+      expect(lastTable[0].id).toBe("3");
+      expect(lastTable[0].ratio).toBe(1);
+    });
+
+    it("should not mutate the original items when building the draw table", () => {
+      getDrawTable(boxItems, { "3": 3 }, "count");
+      expect(boxItems[2].ratio).toBe(1);
+      expect(boxItems[2].count).toBe(7);
+    });
+
+    it("should choose an item according to the remaining counts", () => {
+      const table = getDrawTable(boxItems, {}, "count");
+      // 残り 1 / 2 / 7 (合計10本) -> 0〜0.1: 大当たり, 0.1〜0.3: 当たり, 0.3〜: はずれ
+      expect(chooseLottery(table, () => 0.05).label).toBe("大当たり");
+      expect(chooseLottery(table, () => 0.2).label).toBe("当たり");
+      expect(chooseLottery(table, () => 0.9).label).toBe("はずれ");
+
+      // 大当たりを引いた後は当該項目が選ばれない
+      const afterTable = getDrawTable(boxItems, { "1": 1 }, "count");
+      expect(chooseLottery(afterTable, () => 0).label).toBe("当たり");
+    });
+
+    it("should keep the probability mode behaviour by default", () => {
+      const limited: LotteryItem[] = [{ id: "1", label: "A", ratio: 3, limit: 1, count: 1 }];
+      // drawMode 未指定 (= "probability") では count ではなく limit で判定する
+      expect(getAvailableLotteryItems(limited, { "1": 0 })).toHaveLength(1);
+      expect(getDrawTable(limited, { "1": 0 })[0].ratio).toBe(3);
+      expect(isAllLimitsReached(limited, { "1": 1 })).toBe(true);
+    });
+
+    it("should provide a count-mode preset as a default config", () => {
+      const preset = DEFAULT_CONFIGS.find((c) => c.drawMode === "count");
+      expect(preset).toBeDefined();
+      expect(getTotalItemCount(preset?.items ?? [])).toBe(10);
     });
   });
 });
